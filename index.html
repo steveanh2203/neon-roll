@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Neon Roll 3D</title>
+    <!-- CrazyGames SDK: bật dòng dưới khi submit lên platform
+    <script src="https://sdk.crazygames.com/crazygames-sdk-v3.js"></script>
+    -->
+  </head>
+  <body>
+    <div id="app">
+      <canvas id="c"></canvas>
+      <div id="vignette"></div>
+
+      <div id="hud" class="hidden">
+        <div id="hud-top">
+          <div id="gravChip">
+            <span id="gravArrow">&#9650;</span>
+            <span id="gravLabel">TOP</span>
+          </div>
+          <div id="hud-center">
+            <div id="score">0</div>
+            <div id="speedbar"><div id="speedfill"></div></div>
+            <div id="speed">0 km/h</div>
+          </div>
+          <div id="hud-right">
+            <button id="soundBtn" class="iconbtn" title="Sound">&#128266;</button>
+            <button id="pauseBtn" class="iconbtn" title="Pause (P)">&#10074;&#10074;</button>
+          </div>
+        </div>
+        <div id="toast" class="hidden"></div>
+        <div id="go" class="hidden">GO!</div>
+      </div>
+
+      <div id="menu" class="overlay">
+        <button id="soundBtnMenu" class="iconbtn corner" title="Sound">&#128266;</button>
+        <h1>NEON<span>ROLL</span></h1>
+        <p class="sub">Roll fast. Dodge red. Purple gate flips gravity.</p>
+        <div class="howto">
+          <span class="key">A</span><span class="key">D</span>
+          <span class="or">or</span>
+          <span class="key">&larr;</span><span class="key">&rarr;</span>
+          <span class="or">&middot; tap left / right on mobile</span>
+        </div>
+        <button id="playBtn" class="btn">PLAY</button>
+        <p id="bestMenu" class="best"></p>
+        <p id="statsMenu" class="stats-line"></p>
+      </div>
+
+      <div id="pause" class="overlay hidden">
+        <h2 class="pause-title">PAUSED</h2>
+        <button id="resumeBtn" class="btn">RESUME</button>
+        <button id="pauseRestartBtn" class="btn btn-secondary">RESTART</button>
+        <button id="pauseMenuBtn" class="btn btn-secondary">MENU</button>
+      </div>
+
+      <div id="over" class="overlay hidden">
+        <h2>CRASHED</h2>
+        <div id="newBest" class="newbest hidden">&#9733; NEW BEST &#9733;</div>
+        <p id="finalScore" class="final">0m</p>
+        <div class="stats-grid">
+          <div class="stat"><div class="stat-v" id="statSpeed">0</div><div class="stat-k">TOP KM/H</div></div>
+          <div class="stat"><div class="stat-v" id="statFlips">0</div><div class="stat-k">FLIPS</div></div>
+          <div class="stat"><div class="stat-v" id="statBest">0</div><div class="stat-k">BEST M</div></div>
+        </div>
+        <button id="retryBtn" class="btn">RETRY</button>
+        <button id="menuBtn" class="btn btn-secondary">MENU</button>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
