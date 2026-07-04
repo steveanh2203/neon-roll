@@ -29,6 +29,12 @@
             <button id="pauseBtn" class="iconbtn" title="Pause (P)">&#10074;&#10074;</button>
           </div>
         </div>
+        <div id="powers">
+          <div id="pShield" class="pchip hidden"><span>&#128737;&#65039;</span></div>
+          <div id="pSlow" class="pchip hidden"><span>&#9200;</span><div class="pbar"><i id="pSlowBar"></i></div></div>
+          <div id="pX2" class="pchip gold hidden"><span>&#10006;2</span><div class="pbar"><i id="pX2Bar"></i></div></div>
+          <div id="pGhost" class="pchip purple hidden"><span>&#128123;</span><div class="pbar"><i id="pGhostBar"></i></div></div>
+        </div>
         <div id="toast" class="hidden"></div>
         <div id="go" class="hidden">GO!</div>
       </div>
@@ -42,6 +48,14 @@
           <span class="or">or</span>
           <span class="key">&larr;</span><span class="key">&rarr;</span>
           <span class="or">&middot; tap left / right on mobile</span>
+        </div>
+        <div class="skin-picker">
+          <button id="skinPrev" class="iconbtn">&#9664;</button>
+          <div class="skin-info">
+            <div id="skinName">NEON CORE</div>
+            <div id="skinLock" class="skin-lock">SELECTED</div>
+          </div>
+          <button id="skinNext" class="iconbtn">&#9654;</button>
         </div>
         <button id="playBtn" class="btn">PLAY</button>
         <p id="bestMenu" class="best"></p>

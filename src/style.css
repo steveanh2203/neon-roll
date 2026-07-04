@@ -53,6 +53,31 @@ body {
   animation: flashPurple 0.5s ease-out;
 }
 
+#vignette.flash-cyan {
+  animation: flashCyan 0.45s ease-out;
+}
+
+@keyframes flashCyan {
+  0% {
+    background: rgba(25, 230, 255, 0.45);
+  }
+  100% {
+    background: radial-gradient(ellipse at center, transparent 55%, rgba(5, 2, 15, 0.55) 100%);
+  }
+}
+
+#app.shake #c {
+  animation: shake 0.4s ease-out;
+}
+
+@keyframes shake {
+  0%, 100% { transform: translate(0, 0); }
+  20% { transform: translate(-9px, 5px); }
+  40% { transform: translate(7px, -6px); }
+  60% { transform: translate(-5px, 3px); }
+  80% { transform: translate(3px, -2px); }
+}
+
 @keyframes flashPurple {
   0% {
     background: rgba(162, 107, 255, 0.6);
@@ -192,6 +217,72 @@ body {
   position: absolute;
   top: 14px;
   right: 14px;
+}
+
+/* power-up chips */
+
+#powers {
+  position: absolute;
+  top: 118px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 8px;
+}
+
+.pchip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 52px;
+  padding: 7px 10px;
+  border-radius: 12px;
+  background: rgba(10, 6, 24, 0.65);
+  border: 1px solid #19e6ff66;
+  color: #ffffff;
+  font-size: 16px;
+  text-shadow: 0 0 10px #19e6ff;
+  animation: chipIn 0.25s ease-out;
+}
+
+.pchip.gold {
+  border-color: #ffd54d88;
+  text-shadow: 0 0 10px #ffd54d;
+  color: #ffd54d;
+}
+
+.pchip.purple {
+  border-color: #c084ff88;
+  text-shadow: 0 0 10px #c084ff;
+}
+
+@keyframes chipIn {
+  from {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.pbar {
+  width: 40px;
+  height: 4px;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+
+.pbar i {
+  display: block;
+  height: 100%;
+  width: 100%;
+  border-radius: 99px;
+  background: currentColor;
+  box-shadow: 0 0 8px currentColor;
 }
 
 /* toast + go */
@@ -430,6 +521,38 @@ body {
   font-size: 10px;
   letter-spacing: 2px;
   color: #7f88b8;
+}
+
+/* skin picker */
+
+.skin-picker {
+  display: flex;
+  align-items: center;
+  gap: min(14px, 2vw);
+  max-width: 96vw;
+}
+
+.skin-info {
+  min-width: min(210px, 52vw);
+  text-align: center;
+}
+
+#skinName {
+  font-size: 19px;
+  color: #ffffff;
+  letter-spacing: 3px;
+  text-shadow: 0 0 14px #19e6ff;
+}
+
+.skin-lock {
+  margin-top: 4px;
+  font-size: 11px;
+  letter-spacing: 2px;
+  color: #19e6ff;
+}
+
+.skin-lock.locked {
+  color: #ffd54d;
 }
 
 /* buttons */
