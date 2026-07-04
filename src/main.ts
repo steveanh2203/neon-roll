@@ -15,6 +15,8 @@ const LAT_FACTOR = 0.62; // max lateral speed = forward speed * factor
 
 const VIEW_SEGS = 34; // segments rendered ahead
 const OBSTACLE_MIN_Z = 70;
+const GEM_MIN_Z = 100;
+const GEM_SCORE = 15;
 const ITEM_MIN_Z = 250;
 const GATE_MIN_Z = 240;
 const MOVER_MIN_Z = 400;
@@ -89,6 +91,46 @@ const pickupSound = () => {
   setTimeout(() => blip(780, 1560, 0.12), 70);
 };
 const shieldBreakSound = () => blip(600, 90, 0.25, 'square', 0.16);
+
+const gemSound = () => blip(900, 1500, 0.09, 'sine', 0.08);
+
+// ---------------------------------------------------------------- CrazyGames SDK (no-ops outside the platform)
+interface CGAdCallbacks {
+  adFinished: () => void;
+  adError: (e?: unknown) => void;
+  adStarted?: () => void;
+}
+interface CGSDK {
+  init?: () => Promise<void>;
+  game?: { gameplayStart?: () => void; gameplayStop?: () => void; happytime?: () => void };
+  ad?: { requestAd?: (t: 'rewarded' | 'midgame', cb: CGAdCallbacks) => void };
+}
+const cg = (): CGSDK | undefined => (window as unknown as { CrazyGames?: { SDK?: CGSDK } }).CrazyGames?.SDK;
+let sdkReady = false;
+void (async () => {
+  try {
+    await cg()?.init?.();
+    sdkReady = !!cg();
+  } catch {
+    sdkReady = false;
+  }
+})();
+const sdkStart = () => { try { cg()?.game?.gameplayStart?.(); } catch { /* no-op */ } };
+const sdkStop = () => { try { cg()?.game?.gameplayStop?.(); } catch { /* no-op */ } };
+const sdkHappy = () => { try { cg()?.game?.happytime?.(); } catch { /* no-op */ } };
+
+function showRewardedAd(onFinish: () => void, onFail: () => void) {
+  const s = cg();
+  if (!sdkReady || !s?.ad?.requestAd) {
+    window.setTimeout(onFinish, 400); // dev fallback: pretend the ad played
+    return;
+  }
+  try {
+    s.ad.requestAd('rewarded', { adFinished: onFinish, adError: onFail, adStarted: () => setHum(0, false) });
+  } catch {
+    onFail();
+  }
+}
 
 // ---------------------------------------------------------------- three setup
 const canvas = document.getElementById('c') as HTMLCanvasElement;
@@ -177,6 +219,63 @@ const shieldMesh = new THREE.Mesh(
 );
 shieldMesh.visible = false;
 ballGroup.add(shieldMesh);
+
+// ---------------------------------------------------------------- particles
+interface Particle {
+  mesh: THREE.Mesh;
+  mat: THREE.MeshBasicMaterial;
+  vel: THREE.Vector3;
+  life: number;
+  max: number;
+}
+
+const particlePool: Particle[] = [];
+{
+  const pGeo = new THREE.BoxGeometry(0.22, 0.22, 0.22);
+  for (let i = 0; i < 56; i++) {
+    const mat = new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true });
+    const mesh = new THREE.Mesh(pGeo, mat);
+    mesh.visible = false;
+    scene.add(mesh);
+    particlePool.push({ mesh, mat, vel: new THREE.Vector3(), life: 0, max: 1 });
+  }
+}
+
+function burst(x: number, y: number, z: number, color: string, count = 16, speed = 8) {
+  let n = 0;
+  for (const p of particlePool) {
+    if (p.life > 0) continue;
+    p.mesh.visible = true;
+    p.mat.color.set(color);
+    p.mat.opacity = 1;
+    p.mesh.position.set(x, y, z);
+    p.mesh.scale.setScalar(1);
+    p.vel
+      .set(Math.random() - 0.5, Math.random() - 0.25, Math.random() - 0.5)
+      .normalize()
+      .multiplyScalar(speed * (0.5 + Math.random() * 0.9));
+    p.life = p.max = 0.55 + Math.random() * 0.5;
+    if (++n >= count) break;
+  }
+}
+
+function tickParticles(dt: number) {
+  for (const p of particlePool) {
+    if (p.life <= 0) continue;
+    p.life -= dt;
+    if (p.life <= 0) {
+      p.mesh.visible = false;
+      continue;
+    }
+    p.vel.y -= 22 * dt;
+    p.mesh.position.addScaledVector(p.vel, dt);
+    const k = p.life / p.max;
+    p.mesh.scale.setScalar(Math.max(0.05, k));
+    p.mat.opacity = k;
+    p.mesh.rotation.x += dt * 6;
+    p.mesh.rotation.y += dt * 4;
+  }
+}
 
 function makeTexture(draw: (ctx: CanvasRenderingContext2D, s: number) => void, size = 256): THREE.CanvasTexture {
   const c = document.createElement('canvas');
@@ -406,6 +505,8 @@ const railGeo = new THREE.BoxGeometry(0.4, 0.7, SEG_LEN);
 const stripeGeo = new THREE.BoxGeometry(TRACK_W, 0.12, 0.35);
 const obGeo = new THREE.BoxGeometry(1.7, 1.7, 1.7);
 const itemGeo = new THREE.OctahedronGeometry(0.8, 0);
+const gemGeo = new THREE.OctahedronGeometry(0.34, 0);
+const gemMat = new THREE.MeshBasicMaterial({ color: '#8affd0' });
 
 const floorMat = new THREE.MeshBasicMaterial({ color: ZONES[0].floor });
 const railMat = new THREE.MeshBasicMaterial({ color: ZONES[0].rail });
@@ -452,11 +553,19 @@ interface Item {
   taken?: boolean;
 }
 
+interface Gem {
+  x: number;
+  z: number;
+  side: 1 | -1;
+  taken?: boolean;
+}
+
 interface SegInfo {
   gap: boolean;
   gate: boolean;
   obstacles: Ob[];
   item?: Item;
+  gems: Gem[];
 }
 
 let seed = (Math.random() * 2 ** 31) | 0;
@@ -478,6 +587,7 @@ function segInfo(i: number): SegInfo {
   let gate = false;
   let item: Item | undefined;
   const obstacles: Ob[] = [];
+  const gems: Gem[] = [];
 
   if (z0 > GAP_MIN_Z && !segInfo(i - 1).gap && !gateNearby(i, 2) && rng() < 0.1) {
     gap = true;
@@ -528,7 +638,16 @@ function segInfo(i: number): SegInfo {
     }
   }
 
-  const info = { gap, gate, obstacles, item };
+  // gem rows (coexist with obstacles — risk/reward)
+  if (!gap && !gate && z0 > GEM_MIN_Z && rng() < 0.26) {
+    const lane = [-5, -2.5, 0, 2.5, 5][Math.floor(rng() * 5)];
+    const side: 1 | -1 = z0 > GATE_MIN_Z && rng() < 0.5 ? -1 : 1;
+    for (let k = 0; k < 3; k++) {
+      gems.push({ x: lane, z: z0 + 2.2 + k * 3.4, side });
+    }
+  }
+
+  const info = { gap, gate, obstacles, item, gems };
   segMemo.set(i, info);
   return info;
 }
@@ -543,6 +662,7 @@ interface SegRecord {
   group: THREE.Group;
   obs: { mesh: THREE.Mesh; o: Ob }[];
   items: { mesh: THREE.Mesh; it: Item }[];
+  gems: { mesh: THREE.Mesh; gm: Gem }[];
 }
 const segMeshes = new Map<number, SegRecord>();
 
@@ -558,6 +678,7 @@ function buildSeg(i: number) {
   const info = segInfo(i);
   const obs: { mesh: THREE.Mesh; o: Ob }[] = [];
   const items: { mesh: THREE.Mesh; it: Item }[] = [];
+  const gems: { mesh: THREE.Mesh; gm: Gem }[] = [];
   const group = new THREE.Group();
 
   if (!info.gap) {
@@ -613,16 +734,25 @@ function buildSeg(i: number) {
       scene.add(m);
       items.push({ mesh: m, it });
     }
+
+    for (const gm of info.gems) {
+      if (gm.taken) continue;
+      const m = new THREE.Mesh(gemGeo, gemMat);
+      m.position.set(gm.x + xCenter(gm.z), itemY(gm.side, gm.z), gm.z);
+      scene.add(m);
+      gems.push({ mesh: m, gm });
+    }
   }
 
   scene.add(group);
-  segMeshes.set(i, { group, obs, items });
+  segMeshes.set(i, { group, obs, items, gems });
 }
 
 function disposeSeg(rec: SegRecord) {
   scene.remove(rec.group);
   rec.obs.forEach((e) => scene.remove(e.mesh));
   rec.items.forEach((e) => scene.remove(e.mesh));
+  rec.gems.forEach((e) => scene.remove(e.mesh));
 }
 
 function clearTrack() {
@@ -670,6 +800,7 @@ const powers = { shield: 0, slow: 0, x2: 0, ghost: 0, invuln: 0 };
 
 let lastMilestone = 0;
 let newBestToastShown = false;
+let reviveUsed = false;
 
 // ---------------------------------------------------------------- UI refs
 const $ = (id: string) => document.getElementById(id)!;
@@ -689,6 +820,7 @@ const statSpeedEl = $('statSpeed');
 const statFlipsEl = $('statFlips');
 const statBestEl = $('statBest');
 const newBestEl = $('newBest');
+const reviveBtnEl = $('reviveBtn') as HTMLButtonElement;
 const toastEl = $('toast');
 const goEl = $('go');
 const vignetteEl = $('vignette');
@@ -815,6 +947,16 @@ $('pauseBtn').addEventListener('click', () => pauseRun());
 $('resumeBtn').addEventListener('click', () => resumeRun());
 $('menuBtn').addEventListener('click', () => goToMenu());
 $('pauseMenuBtn').addEventListener('click', () => goToMenu());
+reviveBtnEl.addEventListener('click', () => {
+  if (state.phase !== 'over' || reviveUsed) return;
+  reviveUsed = true;
+  reviveBtnEl.disabled = true;
+  reviveBtnEl.textContent = 'LOADING AD…';
+  showRewardedAd(
+    () => reviveRun(),
+    () => reviveBtnEl.classList.add('hidden')
+  );
+});
 
 function readSteer(): number {
   let s = 0;
@@ -868,9 +1010,11 @@ function startRun() {
   state.flips = 0;
   lastMilestone = 0;
   newBestToastShown = false;
+  reviveUsed = false;
   zoneIdx = 0;
   setZoneTargets(0);
   resetPowers();
+  ballSpin.visible = true;
 
   // snap the camera behind the ball instead of lerping across the whole track
   camera.position.set(state.x, state.y + 5.5, state.z - 11);
@@ -884,13 +1028,14 @@ function startRun() {
   pauseEl.classList.add('hidden');
   hudEl.classList.remove('hidden');
   showGo();
-  // CrazyGames SDK: window.CrazyGames.SDK.game.gameplayStart()
+  sdkStart();
 }
 
 function pauseRun() {
   if (state.phase !== 'run') return;
   state.phase = 'pause';
   setHum(0, false);
+  sdkStop();
   pauseEl.classList.remove('hidden');
 }
 
@@ -898,11 +1043,14 @@ function resumeRun() {
   if (state.phase !== 'pause') return;
   state.phase = 'run';
   pauseEl.classList.add('hidden');
+  sdkStart();
 }
 
 function goToMenu() {
   state.phase = 'menu';
   setHum(0, false);
+  sdkStop();
+  ballSpin.visible = true;
   pauseEl.classList.add('hidden');
   overEl.classList.add('hidden');
   hudEl.classList.add('hidden');
@@ -929,10 +1077,16 @@ function die() {
   state.phase = 'over';
   crashSound();
   setHum(0, false);
+  sdkStop();
   flashVignette('flash');
   appEl.classList.remove('shake');
   void appEl.offsetWidth;
   appEl.classList.add('shake');
+  // shatter the ball
+  burst(state.x, state.y, state.z, '#ff2e55', 18, 11);
+  burst(state.x, state.y, state.z, '#19e6ff', 12, 8);
+  ballSpin.visible = false;
+  shieldMesh.visible = false;
 
   const score = Math.floor(state.score);
   const isNewBest = score > 0 && score > state.best;
@@ -948,13 +1102,46 @@ function die() {
   statFlipsEl.textContent = `${state.flips}`;
   statBestEl.textContent = `${state.best}`;
   newBestEl.classList.toggle('hidden', !isNewBest);
+  if (isNewBest) sdkHappy();
+
+  reviveBtnEl.classList.toggle('hidden', reviveUsed);
+  reviveBtnEl.disabled = false;
+  reviveBtnEl.innerHTML = '&#9654; REVIVE <span class="ad-tag">AD</span>';
 
   setTimeout(() => {
     hudEl.classList.add('hidden');
     overEl.classList.remove('hidden');
     animateFinalScore(score);
   }, 500);
-  // CrazyGames SDK: gameplayStop() + đây là chỗ gắn rewarded ad "REVIVE"
+}
+
+// revive via rewarded ad: roll back the stats die() recorded — the run continues
+function reviveRun() {
+  const score = Math.floor(state.score);
+  state.runs = Math.max(0, state.runs - 1);
+  state.total = Math.max(0, state.total - score);
+  localStorage.setItem('neonroll_runs', String(state.runs));
+  localStorage.setItem('neonroll_total', String(state.total));
+  showBest();
+
+  // put the ball back on the next safe stretch of track
+  let segI = Math.floor(state.z / SEG_LEN) + 1;
+  while (segInfo(segI).gap) segI++;
+  state.z = segI * SEG_LEN + 2;
+  state.x = xCenter(state.z);
+  state.y = restY(state.z, state.gravity);
+  state.vy = 0;
+  state.vx = 0;
+  state.grounded = true;
+  state.speed = Math.max(SPEED_START, state.speed * 0.8); // ease back in
+  powers.invuln = 2;
+  ballSpin.visible = true;
+
+  state.phase = 'run';
+  overEl.classList.add('hidden');
+  hudEl.classList.remove('hidden');
+  showGo();
+  sdkStart();
 }
 
 // ---------------------------------------------------------------- powers
@@ -1023,6 +1210,7 @@ function flipGravity() {
   state.grounded = true;
   state.flips += 1;
   gateSound();
+  burst(state.x, state.y, state.z, '#a26bff', 16, 7);
   toast('GRAVITY FLIP!', 'purple');
   gravChipEl.classList.toggle('flipped', state.gravity === -1);
   gravLabelEl.textContent = state.gravity === 1 ? 'TOP' : 'UNDER';
@@ -1126,23 +1314,43 @@ function step(dt: number) {
 
   const nearGround = Math.abs(state.y - groundY) < 1.5;
 
-  // item pickups
+  // item + gem pickups
   if (nearGround) {
     for (let i = segIdx - 1; i <= segIdx + 1; i++) {
       if (i < 0) continue;
-      const it = segInfo(i).item;
-      if (!it || it.taken || it.side !== g) continue;
-      const ix = it.x + xCenter(it.z);
-      if (Math.abs(state.z - it.z) < 1.6 && Math.abs(state.x - ix) < 1.6) {
-        it.taken = true;
-        const rec = segMeshes.get(i);
-        if (rec) {
-          rec.items.forEach((e) => {
-            if (e.it === it) scene.remove(e.mesh);
-          });
-          rec.items = rec.items.filter((e) => e.it !== it);
+      const inf = segInfo(i);
+      const it = inf.item;
+      if (it && !it.taken && it.side === g) {
+        const ix = it.x + xCenter(it.z);
+        if (Math.abs(state.z - it.z) < 1.6 && Math.abs(state.x - ix) < 1.6) {
+          it.taken = true;
+          const rec = segMeshes.get(i);
+          if (rec) {
+            rec.items.forEach((e) => {
+              if (e.it === it) scene.remove(e.mesh);
+            });
+            rec.items = rec.items.filter((e) => e.it !== it);
+          }
+          burst(ix, itemY(it.side, it.z), it.z, ITEM_COLORS[it.kind], 12, 6);
+          applyPower(it.kind);
         }
-        applyPower(it.kind);
+      }
+      for (const gm of inf.gems) {
+        if (gm.taken || gm.side !== g) continue;
+        const gx = gm.x + xCenter(gm.z);
+        if (Math.abs(state.z - gm.z) < 1.4 && Math.abs(state.x - gx) < 1.4) {
+          gm.taken = true;
+          const rec = segMeshes.get(i);
+          if (rec) {
+            rec.gems.forEach((e) => {
+              if (e.gm === gm) scene.remove(e.mesh);
+            });
+            rec.gems = rec.gems.filter((e) => e.gm !== gm);
+          }
+          state.score += GEM_SCORE * (powers.x2 > 0 ? 2 : 1);
+          gemSound();
+          burst(gx, itemY(gm.side, gm.z), gm.z, '#8affd0', 6, 5);
+        }
       }
     }
   }
@@ -1205,7 +1413,7 @@ function tick(dt: number) {
   (scene.fog as THREE.Fog).color.lerp(zoneTarget.fog, lerpK);
   (scene.background as THREE.Color).lerp(zoneTarget.fog, lerpK);
 
-  // animate movers + item spin
+  // animate movers + item/gem spin + particles
   for (const rec of segMeshes.values()) {
     for (const e of rec.obs) {
       if (e.o.type === 'mover') e.mesh.position.x = obX(e.o);
@@ -1214,7 +1422,11 @@ function tick(dt: number) {
       e.mesh.rotation.y += dt * 2.5;
       e.mesh.position.y = itemY(e.it.side, e.it.z) + Math.sin(state.time * 3 + e.it.z) * 0.15 * e.it.side;
     }
+    for (const e of rec.gems) {
+      e.mesh.rotation.y += dt * 3.5;
+    }
   }
+  tickParticles(dt);
 
   // ball visual
   ballGroup.position.set(state.x, state.y, state.z);

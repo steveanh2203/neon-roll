@@ -37,6 +37,7 @@ npm run build   # output vào dist/, ~131KB gzip
 - [x] Core loop: lăn, né, hố, chết, retry, best score
 - [x] Twist đảo trọng lực (cổng tím, chướng ngại 2 mặt track)
 - [x] UI đầy đủ: HUD, pause, stats, toast, sound toggle
-- [ ] Juice: hiệu ứng bóng vỡ khi crash, particle khi qua cổng, gem nhặt
-- [ ] CrazyGames SDK: gameplayStart/Stop + rewarded ad "REVIVE" (đã đánh dấu chỗ gắn trong `die()`)
-- [ ] Thumbnail + submit developer portal
+- [x] 5 zone đổi màu mỗi 500m + chướng ngại mover/tường + 10 skin bóng + power-up (shield/slow/x2/ghost)
+- [x] Juice: bóng vỡ khi crash, particle qua cổng/nhặt đồ, gem +15 điểm, rung màn hình
+- [x] CrazyGames SDK v3: gameplayStart/Stop, happytime khi phá kỷ lục, rewarded ad "REVIVE" (dev fallback khi chạy ngoài platform)
+- [ ] Thumbnail + submit developer portal (upload thư mục `dist/` sau khi `npm run build`)

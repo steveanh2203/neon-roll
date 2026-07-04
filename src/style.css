@@ -499,6 +499,9 @@ body {
 .stats-grid {
   display: flex;
   gap: 12px;
+  flex-wrap: wrap;
+  justify-content: center;
+  max-width: 96vw;
 }
 
 .stat {
@@ -575,6 +578,44 @@ body {
 .btn:hover {
   transform: scale(1.06);
   box-shadow: 0 0 30px #19e6ffcc, 0 0 80px #19e6ff66;
+}
+
+.btn-revive {
+  background: #ffd54d;
+  box-shadow: 0 0 22px #ffd54d99, 0 0 60px #ffd54d44;
+  animation: revivePulse 1.4s ease-in-out infinite;
+}
+
+.btn-revive:hover {
+  box-shadow: 0 0 30px #ffd54dcc, 0 0 80px #ffd54d66;
+}
+
+.btn-revive:disabled {
+  animation: none;
+  opacity: 0.7;
+  cursor: wait;
+}
+
+@keyframes revivePulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.04);
+  }
+}
+
+.ad-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: rgba(10, 6, 24, 0.8);
+  color: #ffd54d;
+  font-size: 11px;
+  letter-spacing: 1px;
+  vertical-align: middle;
 }
 
 .btn-secondary {
