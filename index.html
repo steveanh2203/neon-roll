@@ -44,27 +44,40 @@
       <div id="menu" class="overlay">
         <button id="soundBtnMenu" class="iconbtn corner" title="Sound">&#128266;</button>
         <button id="fxBtn" class="iconbtn corner corner-2" title="Glow FX (t&#7855;t n&#7871;u m&#225;y y&#7871;u)">&#10024;</button>
-        <h1>NEON<span>ROLL</span></h1>
-        <p class="sub">Roll fast. Dodge red. Purple gate flips gravity.</p>
-        <div class="howto">
-          <span class="key">A</span><span class="key">D</span>
-          <span class="or">or</span>
-          <span class="key">&larr;</span><span class="key">&rarr;</span>
-          <span class="or">&middot; tap left / right on mobile</span>
-        </div>
-        <div class="skin-picker">
-          <button id="skinPrev" class="iconbtn">&#9664;</button>
-          <div class="skin-info">
-            <div id="skinName">NEON CORE</div>
-            <div id="skinLock" class="skin-lock">SELECTED</div>
+        <div class="menu-shell">
+          <div class="menu-primary">
+            <h1>NEON<span>ROLL</span></h1>
+            <p class="sub">Roll fast. Dodge red. Purple gate flips gravity.</p>
+            <div class="howto">
+              <span class="key">A</span><span class="key">D</span>
+              <span class="or">or</span>
+              <span class="key">&larr;</span><span class="key">&rarr;</span>
+              <span class="or">&middot; tap left / right on mobile</span>
+            </div>
+            <div class="skin-picker">
+              <button id="skinPrev" class="iconbtn">&#9664;</button>
+              <div class="skin-info">
+                <div id="skinName">NEON CORE</div>
+                <div id="skinLock" class="skin-lock">SELECTED</div>
+              </div>
+              <button id="skinNext" class="iconbtn">&#9654;</button>
+            </div>
+            <div class="menu-actions">
+              <button id="playBtn" class="btn">PLAY</button>
+              <button id="mapBtn" class="btn btn-secondary">&#128506; MAPS</button>
+              <button id="shopBtn" class="btn btn-secondary">&#128717; SHOP &middot; <span id="walletMenu">0</span> &#128142;</button>
+              <button id="dailyRewardBtn" class="btn btn-secondary daily-btn">&#127873; DAILY</button>
+            </div>
+            <div class="menu-stats">
+              <p id="bestMenu" class="best"></p>
+              <p id="statsMenu" class="stats-line"></p>
+            </div>
           </div>
-          <button id="skinNext" class="iconbtn">&#9654;</button>
+          <div class="menu-secondary">
+            <div class="panel-title">MISSIONS</div>
+            <div id="missionList" class="mission-list"></div>
+          </div>
         </div>
-        <button id="playBtn" class="btn">PLAY</button>
-        <button id="mapBtn" class="btn btn-secondary">&#128506; MAPS</button>
-        <button id="shopBtn" class="btn btn-secondary">&#128717; SHOP &middot; <span id="walletMenu">0</span> &#128142;</button>
-        <p id="bestMenu" class="best"></p>
-        <p id="statsMenu" class="stats-line"></p>
       </div>
 
       <div id="shop" class="overlay shop hidden">
@@ -88,6 +101,12 @@
 
       <div id="pause" class="overlay hidden">
         <h2 class="pause-title">PAUSED</h2>
+        <div class="settings-grid">
+          <button id="pauseSoundBtn" class="setting-btn">SOUND</button>
+          <button id="pauseFxBtn" class="setting-btn">GLOW FX</button>
+          <button id="shakeBtn" class="setting-btn">SHAKE</button>
+          <button id="motionBtn" class="setting-btn">MOTION</button>
+        </div>
         <button id="resumeBtn" class="btn">RESUME</button>
         <button id="pauseRestartBtn" class="btn btn-secondary">RESTART</button>
         <button id="pauseMenuBtn" class="btn btn-secondary">MENU</button>
@@ -95,9 +114,11 @@
 
       <div id="over" class="overlay hidden">
         <h2>CRASHED</h2>
+        <p id="deathReason" class="death-reason">Hit obstacle</p>
         <div id="newBest" class="newbest hidden">&#9733; NEW BEST &#9733;</div>
         <div id="unlockMsg" class="newbest hidden"></div>
         <p id="finalScore" class="final">0m</p>
+        <div id="missionListOver" class="mission-list mission-list-over"></div>
         <div class="stats-grid">
           <div class="stat"><div class="stat-v" id="statSpeed">0</div><div class="stat-k">TOP KM/H</div></div>
           <div class="stat"><div class="stat-v" id="statFlips">0</div><div class="stat-k">FLIPS</div></div>

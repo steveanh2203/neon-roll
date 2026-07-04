@@ -27,6 +27,13 @@ const GAP_MIN_Z = 380;
 const WALL_MIN_Z = 800;
 const ZONE_LEN = 500; // meters per color zone
 const FLOOR_H = 1; // track slab thickness
+const NEON_BASE_BRIGHTNESS = 0.78;
+const NEON_BEAT_BOOST = 0.22;
+const TRACK_VARIANT_MIN_Z = 84;
+const BOOST_MIN_Z = 180;
+const BOOST_DURATION = 1.35;
+const BOOST_MULT = 1.38;
+const LASER_MIN_Z = 520;
 
 // track centerline (analytic — physics & rendering share the same functions)
 const yCenter = (z: number) => -0.28 * z + Math.sin(z * 0.035) * 3;
@@ -270,6 +277,8 @@ composer.addPass(new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window
 
 let fxOn =
   (localStorage.getItem('neonroll_fx') ?? (window.matchMedia('(pointer: coarse)').matches ? '0' : '1')) === '1';
+let shakeOn = localStorage.getItem('neonroll_shake') !== '0';
+let reducedMotion = localStorage.getItem('neonroll_reduced_motion') === '1';
 
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
@@ -309,6 +318,7 @@ type Decor = 'none' | 'water' | 'trees' | 'rocks';
 
 interface Zone {
   name: string;
+  preview: string;
   floor: string;
   rail: string;
   stripe: string;
@@ -320,16 +330,16 @@ interface Zone {
 }
 
 const ZONES: Zone[] = [
-  { name: 'NEON CITY', floor: '#141034', rail: '#19e6ff', stripe: '#ff2ea6', ob: '#ff2e55', fog: '#0a0618', star: '#8fa4ff', unlockTotal: 0, decor: 'none' },
-  { name: 'RIVERSIDE', floor: '#0b1d22', rail: '#4dd0e1', stripe: '#80deea', ob: '#ff2e55', fog: '#06141a', star: '#b2ebf2', unlockTotal: 500, decor: 'water' },
-  { name: 'DEEP OCEAN', floor: '#041525', rail: '#29b6f6', stripe: '#0277bd', ob: '#ff2e55', fog: '#021020', star: '#81d4fa', unlockTotal: 1500, decor: 'water' },
-  { name: 'TROPIC BEACH', floor: '#23190b', rail: '#ffd54d', stripe: '#ff8a65', ob: '#ff2e55', fog: '#1a1208', star: '#ffe0b2', unlockTotal: 3000, decor: 'water' },
-  { name: 'EMERALD FOREST', floor: '#0c1c10', rail: '#66bb6a', stripe: '#b2ff59', ob: '#ff2e55', fog: '#071408', star: '#c8e6c9', unlockTotal: 5000, decor: 'trees' },
-  { name: 'MISTY MOUNTAIN', floor: '#141a24', rail: '#b0bec5', stripe: '#eceff1', ob: '#ff2e55', fog: '#10151d', star: '#ffffff', unlockTotal: 8000, decor: 'rocks' },
-  { name: 'GOLDEN DESERT', floor: '#201704', rail: '#ffb300', stripe: '#ff9100', ob: '#ff2e55', fog: '#171004', star: '#ffe9b0', unlockTotal: 12000, decor: 'rocks' },
-  { name: 'VOLCANO', floor: '#200a06', rail: '#ffb020', stripe: '#ff5722', ob: '#f5f5f5', fog: '#170503', star: '#ffb28a', unlockTotal: 17000, decor: 'rocks' },
-  { name: 'AURORA', floor: '#0d1626', rail: '#80ffdb', stripe: '#b388ff', ob: '#ff2e55', fog: '#0a1220', star: '#e0f2ff', unlockTotal: 23000, decor: 'none' },
-  { name: 'GALAXY VOID', floor: '#16081f', rail: '#d500f9', stripe: '#ffd54d', ob: '#ff2e55', fog: '#0d0214', star: '#e2b0ff', unlockTotal: 30000, decor: 'none' },
+  { name: 'NEON CITY', preview: '/assets/maps/01-neon-city.jpg', floor: '#141034', rail: '#19e6ff', stripe: '#ff2ea6', ob: '#ff2e55', fog: '#0a0618', star: '#8fa4ff', unlockTotal: 0, decor: 'none' },
+  { name: 'RIVERSIDE', preview: '/assets/maps/02-riverside.jpg', floor: '#0b1d22', rail: '#4dd0e1', stripe: '#80deea', ob: '#ff2e55', fog: '#06141a', star: '#b2ebf2', unlockTotal: 500, decor: 'water' },
+  { name: 'DEEP OCEAN', preview: '/assets/maps/03-deep-ocean.jpg', floor: '#041525', rail: '#29b6f6', stripe: '#0277bd', ob: '#ff2e55', fog: '#021020', star: '#81d4fa', unlockTotal: 1500, decor: 'water' },
+  { name: 'TROPIC BEACH', preview: '/assets/maps/04-tropic-beach.jpg', floor: '#23190b', rail: '#ffd54d', stripe: '#ff8a65', ob: '#ff2e55', fog: '#1a1208', star: '#ffe0b2', unlockTotal: 3000, decor: 'water' },
+  { name: 'EMERALD FOREST', preview: '/assets/maps/05-emerald-forest.jpg', floor: '#0c1c10', rail: '#66bb6a', stripe: '#b2ff59', ob: '#ff2e55', fog: '#071408', star: '#c8e6c9', unlockTotal: 5000, decor: 'trees' },
+  { name: 'MISTY MOUNTAIN', preview: '/assets/maps/06-misty-mountain.jpg', floor: '#141a24', rail: '#b0bec5', stripe: '#eceff1', ob: '#ff2e55', fog: '#10151d', star: '#ffffff', unlockTotal: 8000, decor: 'rocks' },
+  { name: 'GOLDEN DESERT', preview: '/assets/maps/07-golden-desert.jpg', floor: '#201704', rail: '#ffb300', stripe: '#ff9100', ob: '#ff2e55', fog: '#171004', star: '#ffe9b0', unlockTotal: 12000, decor: 'rocks' },
+  { name: 'VOLCANO', preview: '/assets/maps/08-volcano.jpg', floor: '#200a06', rail: '#ffb020', stripe: '#ff5722', ob: '#f5f5f5', fog: '#170503', star: '#ffb28a', unlockTotal: 17000, decor: 'rocks' },
+  { name: 'AURORA', preview: '/assets/maps/09-aurora.jpg', floor: '#0d1626', rail: '#80ffdb', stripe: '#b388ff', ob: '#ff2e55', fog: '#0a1220', star: '#e0f2ff', unlockTotal: 23000, decor: 'none' },
+  { name: 'GALAXY VOID', preview: '/assets/maps/10-galaxy-void.jpg', floor: '#16081f', rail: '#d500f9', stripe: '#ffd54d', ob: '#ff2e55', fog: '#0d0214', star: '#e2b0ff', unlockTotal: 30000, decor: 'none' },
 ];
 
 function zoneUnlocked(z: Zone): boolean {
@@ -923,6 +933,13 @@ function applySkin(idx: number) {
 const floorGeo = new THREE.BoxGeometry(TRACK_W, FLOOR_H, SEG_LEN);
 const railGeo = new THREE.BoxGeometry(0.4, 0.7, SEG_LEN);
 const stripeGeo = new THREE.BoxGeometry(TRACK_W, 0.12, 0.35);
+const laneLineGeo = new THREE.BoxGeometry(0.14, 0.1, SEG_LEN * 0.82);
+const edgeGlowGeo = new THREE.BoxGeometry(0.18, 0.1, SEG_LEN * 0.88);
+const tilePanelGeo = new THREE.BoxGeometry(3.2, 0.08, 2.05);
+const dashGeo = new THREE.BoxGeometry(1.12, 0.1, 0.42);
+const chevronGeo = new THREE.BoxGeometry(3.5, 0.1, 0.22);
+const boostPadGeo = new THREE.BoxGeometry(5.6, 0.13, 1.2);
+const laserBarGeo = new THREE.BoxGeometry(1, 0.26, 0.34);
 const obGeo = new THREE.BoxGeometry(1.7, 1.7, 1.7);
 const itemGeo = new THREE.OctahedronGeometry(0.8, 0);
 const gemGeo = new THREE.OctahedronGeometry(0.34, 0);
@@ -959,6 +976,9 @@ function waterMatFor(zn: Zone): THREE.MeshBasicMaterial {
 const floorMat = new THREE.MeshBasicMaterial({ color: ZONES[0].floor });
 const railMat = new THREE.MeshBasicMaterial({ color: ZONES[0].rail });
 const stripeMat = new THREE.MeshBasicMaterial({ color: ZONES[0].stripe });
+const trackPanelMat = new THREE.MeshBasicMaterial({ color: '#030712', transparent: true, opacity: 0.42, depthWrite: false });
+const boostMat = new THREE.MeshBasicMaterial({ color: '#ffd54d', transparent: true, opacity: 0.92 });
+const laserMat = new THREE.MeshBasicMaterial({ color: '#ff2e55' });
 const obMat = new THREE.MeshBasicMaterial({ color: ZONES[0].ob });
 const obEdgeMat = new THREE.LineBasicMaterial({ color: '#ffffff' });
 const obEdges = new THREE.EdgesGeometry(obGeo);
@@ -982,6 +1002,7 @@ const itemMats: Record<PowerKind, THREE.MeshBasicMaterial> = {
 
 // ---------------------------------------------------------------- track generation
 type ObType = 'block' | 'mover';
+type TrackStyle = 'classic' | 'laneLines' | 'pulseTiles' | 'centerDash' | 'chevrons' | 'edgeGlow' | 'circuit';
 
 interface Ob {
   x: number;
@@ -1008,10 +1029,26 @@ interface Gem {
   taken?: boolean;
 }
 
+interface Boost {
+  z: number;
+  side: 1 | -1;
+  taken?: boolean;
+}
+
+interface Laser {
+  z: number;
+  side: 1 | -1;
+  gapX: number;
+  dead?: boolean;
+}
+
 interface SegInfo {
   gap: boolean;
   gate: boolean;
+  style: TrackStyle;
   obstacles: Ob[];
+  boosts: Boost[];
+  lasers: Laser[];
   item?: Item;
   gems: Gem[];
 }
@@ -1026,6 +1063,13 @@ function gateNearby(i: number, back: number): boolean {
   return false;
 }
 
+function trackStyleFor(i: number, z0: number): TrackStyle {
+  if (z0 < TRACK_VARIANT_MIN_Z) return 'classic';
+  const rng = mulberry32((seed ^ Math.imul(i + 401, 0x27d4eb2d)) >>> 0);
+  const styles: TrackStyle[] = ['classic', 'laneLines', 'pulseTiles', 'centerDash', 'chevrons', 'edgeGlow', 'circuit'];
+  return styles[Math.floor(rng() * styles.length)];
+}
+
 function segInfo(i: number): SegInfo {
   const memo = segMemo.get(i);
   if (memo) return memo;
@@ -1033,8 +1077,11 @@ function segInfo(i: number): SegInfo {
   const rng = mulberry32((seed ^ Math.imul(i + 1, 0x9e3779b9)) >>> 0);
   let gap = false;
   let gate = false;
+  const style = trackStyleFor(i, z0);
   let item: Item | undefined;
   const obstacles: Ob[] = [];
+  const boosts: Boost[] = [];
+  const lasers: Laser[] = [];
   const gems: Gem[] = [];
 
   if (z0 > GAP_MIN_Z && !segInfo(i - 1).gap && !gateNearby(i, 2) && rng() < 0.1) {
@@ -1053,6 +1100,21 @@ function segInfo(i: number): SegInfo {
       side: z0 > GATE_MIN_Z && rng() < 0.5 ? -1 : 1,
       kind: kinds[Math.floor(rng() * kinds.length)],
     };
+  }
+
+  if (!gap && !gate && z0 > BOOST_MIN_Z && rng() < 0.12) {
+    boosts.push({
+      z: z0 + 2.5 + rng() * (SEG_LEN - 5),
+      side: z0 > GATE_MIN_Z && rng() < 0.35 ? -1 : 1,
+    });
+  }
+
+  if (!gap && !gate && z0 > LASER_MIN_Z && rng() < Math.min(0.16, 0.06 + z0 / 6000)) {
+    lasers.push({
+      z: z0 + 3 + rng() * (SEG_LEN - 6),
+      side: z0 > GATE_MIN_Z && rng() < 0.5 ? -1 : 1,
+      gapX: [-4.8, -2.4, 0, 2.4, 4.8][Math.floor(rng() * 5)],
+    });
   }
 
   if (!gap && !gate && !item && z0 > OBSTACLE_MIN_Z) {
@@ -1095,7 +1157,7 @@ function segInfo(i: number): SegInfo {
     }
   }
 
-  const info = { gap, gate, obstacles, item, gems };
+  const info = { gap, gate, style, obstacles, boosts, lasers, item, gems };
   segMemo.set(i, info);
   return info;
 }
@@ -1109,6 +1171,8 @@ function obX(o: Ob): number {
 interface SegRecord {
   group: THREE.Group;
   obs: { mesh: THREE.Mesh; o: Ob }[];
+  boosts: { mesh: THREE.Mesh; b: Boost }[];
+  lasers: { meshes: THREE.Mesh[]; l: Laser }[];
   items: { mesh: THREE.Mesh; it: Item }[];
   gems: { mesh: THREE.Mesh; gm: Gem }[];
 }
@@ -1122,9 +1186,68 @@ function itemY(side: 1 | -1, z: number): number {
   return side === 1 ? yCenter(z) + 1.5 : yCenter(z) - FLOOR_H - 1.5;
 }
 
+function padY(side: 1 | -1, z: number): number {
+  return side === 1 ? yCenter(z) + 0.62 : yCenter(z) - FLOOR_H - 0.62;
+}
+
+function laserY(side: 1 | -1, z: number): number {
+  return side === 1 ? yCenter(z) + 1.35 : yCenter(z) - FLOOR_H - 1.35;
+}
+
+function addTrackDetail(group: THREE.Group, geo: THREE.BufferGeometry, mat: THREE.Material, side: 1 | -1, x: number, z: number, rotY = 0) {
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set(x, 0.57 * side, z);
+  mesh.rotation.y = rotY;
+  group.add(mesh);
+}
+
+function addSurfaceStyle(group: THREE.Group, style: TrackStyle, side: 1 | -1) {
+  if (style === 'classic') return;
+
+  if (style === 'laneLines') {
+    for (const x of [-TRACK_W / 6, TRACK_W / 6]) addTrackDetail(group, laneLineGeo, railMat, side, x, 0);
+    return;
+  }
+
+  if (style === 'pulseTiles') {
+    for (const z of [-4, 0, 4]) {
+      for (const x of [-4.2, 0, 4.2]) addTrackDetail(group, tilePanelGeo, trackPanelMat, side, x, z);
+    }
+    addTrackDetail(group, laneLineGeo, stripeMat, side, 0, 0);
+    return;
+  }
+
+  if (style === 'centerDash') {
+    for (const z of [-4.2, -2.1, 0, 2.1, 4.2]) addTrackDetail(group, dashGeo, stripeMat, side, 0, z);
+    return;
+  }
+
+  if (style === 'chevrons') {
+    for (const z of [-3.8, 0, 3.8]) {
+      addTrackDetail(group, chevronGeo, stripeMat, side, -1.1, z, 0.46);
+      addTrackDetail(group, chevronGeo, stripeMat, side, 1.1, z, -0.46);
+    }
+    return;
+  }
+
+  if (style === 'edgeGlow') {
+    for (const x of [-(HALF_W - 1.2), HALF_W - 1.2]) addTrackDetail(group, edgeGlowGeo, railMat, side, x, 0);
+    for (const z of [-4.4, 4.4]) addTrackDetail(group, stripeGeo, stripeMat, side, 0, z);
+    return;
+  }
+
+  for (const x of [-4.8, 0, 4.8]) addTrackDetail(group, laneLineGeo, railMat, side, x, 0);
+  for (const z of [-3, 3]) {
+    addTrackDetail(group, tilePanelGeo, trackPanelMat, side, -2.4, z);
+    addTrackDetail(group, tilePanelGeo, trackPanelMat, side, 2.4, z);
+  }
+}
+
 function buildSeg(i: number) {
   const info = segInfo(i);
   const obs: { mesh: THREE.Mesh; o: Ob }[] = [];
+  const boosts: { mesh: THREE.Mesh; b: Boost }[] = [];
+  const lasers: { meshes: THREE.Mesh[]; l: Laser }[] = [];
   const items: { mesh: THREE.Mesh; it: Item }[] = [];
   const gems: { mesh: THREE.Mesh; gm: Gem }[] = [];
   const group = new THREE.Group();
@@ -1144,7 +1267,7 @@ function buildSeg(i: number) {
     const floor = new THREE.Mesh(floorGeo, floorMat);
     group.add(floor);
     // rails + stripe on both faces so the underside is readable after a gravity flip
-    for (const side of [1, -1]) {
+    for (const side of [1, -1] as const) {
       const railL = new THREE.Mesh(railGeo, railMat);
       railL.position.set(-(HALF_W + 0.2), 0.6 * side, 0);
       const railR = new THREE.Mesh(railGeo, railMat);
@@ -1152,6 +1275,7 @@ function buildSeg(i: number) {
       const stripe = new THREE.Mesh(stripeGeo, stripeMat);
       stripe.position.set(0, 0.56 * side, -SEG_LEN / 2);
       group.add(railL, railR, stripe);
+      addSurfaceStyle(group, info.style, side);
     }
 
     // roadside decor for the map at this distance
@@ -1197,6 +1321,27 @@ function buildSeg(i: number) {
       group.add(postL, postR, barTop, barBot);
     }
 
+    for (const b of info.boosts) {
+      const pad = new THREE.Mesh(boostPadGeo, boostMat);
+      pad.position.set(0, 0.6 * b.side, b.z - (z0 + z1) / 2);
+      group.add(pad);
+      boosts.push({ mesh: pad, b });
+    }
+
+    for (const l of info.lasers) {
+      if (l.dead) continue;
+      const leftW = Math.max(0.5, l.gapX + HALF_W - 1.5);
+      const rightW = Math.max(0.5, HALF_W - l.gapX - 1.5);
+      const left = new THREE.Mesh(laserBarGeo, laserMat);
+      const right = new THREE.Mesh(laserBarGeo, laserMat);
+      left.scale.x = leftW;
+      right.scale.x = rightW;
+      left.position.set(xCenter(l.z) - HALF_W + leftW / 2, laserY(l.side, l.z), l.z);
+      right.position.set(xCenter(l.z) + HALF_W - rightW / 2, laserY(l.side, l.z), l.z);
+      scene.add(left, right);
+      lasers.push({ meshes: [left, right], l });
+    }
+
     for (const o of info.obstacles) {
       if (o.dead) continue;
       const box = new THREE.Mesh(obGeo, obMat);
@@ -1224,12 +1369,13 @@ function buildSeg(i: number) {
   }
 
   scene.add(group);
-  segMeshes.set(i, { group, obs, items, gems });
+  segMeshes.set(i, { group, obs, boosts, lasers, items, gems });
 }
 
 function disposeSeg(rec: SegRecord) {
   scene.remove(rec.group);
   rec.obs.forEach((e) => scene.remove(e.mesh));
+  rec.lasers.forEach((e) => e.meshes.forEach((mesh) => scene.remove(mesh)));
   rec.items.forEach((e) => scene.remove(e.mesh));
   rec.gems.forEach((e) => scene.remove(e.mesh));
 }
@@ -1275,11 +1421,26 @@ const state = {
   total: Number(localStorage.getItem('neonroll_total') || 0),
 };
 
-const powers = { shield: 0, slow: 0, x2: 0, ghost: 0, invuln: 0 };
+const powers = { shield: 0, slow: 0, x2: 0, ghost: 0, invuln: 0, boost: 0 };
+
+const careerStats = {
+  gems: Number(localStorage.getItem('neonroll_total_gems_collected') || 0),
+  boosts: Number(localStorage.getItem('neonroll_total_boosts') || 0),
+  lasers: Number(localStorage.getItem('neonroll_total_lasers') || 0),
+};
+const runStats = { gems: 0, boosts: 0, lasers: 0 };
+
+function saveCareerStats() {
+  localStorage.setItem('neonroll_total_gems_collected', String(careerStats.gems));
+  localStorage.setItem('neonroll_total_boosts', String(careerStats.boosts));
+  localStorage.setItem('neonroll_total_lasers', String(careerStats.lasers));
+}
 
 let lastMilestone = 0;
 let newBestToastShown = false;
 let reviveUsed = false;
+let airDeathReason = 'Fell off track';
+let lastDeathReason = 'Crashed';
 
 // ---------------------------------------------------------------- UI refs
 const $ = (id: string) => document.getElementById(id)!;
@@ -1294,6 +1455,7 @@ const menuEl = $('menu');
 const pauseEl = $('pause');
 const overEl = $('over');
 const finalScoreEl = $('finalScore');
+const deathReasonEl = $('deathReason');
 const bestMenuEl = $('bestMenu');
 const statsMenuEl = $('statsMenu');
 const statSpeedEl = $('statSpeed');
@@ -1307,6 +1469,13 @@ const toastEl = $('toast');
 const goEl = $('go');
 const vignetteEl = $('vignette');
 const appEl = $('app');
+const dailyRewardBtnEl = $('dailyRewardBtn');
+const missionListEl = $('missionList');
+const missionListOverEl = $('missionListOver');
+const pauseSoundBtnEl = $('pauseSoundBtn');
+const pauseFxBtnEl = $('pauseFxBtn');
+const shakeBtnEl = $('shakeBtn');
+const motionBtnEl = $('motionBtn');
 const skinNameEl = $('skinName');
 const skinLockEl = $('skinLock');
 const pChips: Record<Exclude<PowerKind, never>, { chip: HTMLElement; bar: HTMLElement | null }> = {
@@ -1349,13 +1518,15 @@ function flashVignette(cls: 'flash' | 'flash-purple' | 'flash-cyan') {
 }
 
 // ---------------------------------------------------------------- sound toggle
-const soundBtns = [$('soundBtn'), $('soundBtnMenu')];
+const soundBtns = [$('soundBtn'), $('soundBtnMenu'), pauseSoundBtnEl];
 
 function renderSoundBtns() {
   for (const b of soundBtns) {
     b.innerHTML = muted ? '&#128263;' : '&#128266;';
     b.classList.toggle('muted', muted);
   }
+  pauseSoundBtnEl.textContent = muted ? 'SOUND OFF' : 'SOUND ON';
+  pauseSoundBtnEl.classList.toggle('off', muted);
 }
 renderSoundBtns();
 
@@ -1368,12 +1539,35 @@ function toggleSound() {
 soundBtns.forEach((b) => b.addEventListener('click', toggleSound));
 
 const fxBtn = $('fxBtn');
-fxBtn.classList.toggle('muted', !fxOn);
-fxBtn.addEventListener('click', () => {
+function renderSettingsBtns() {
+  fxBtn.classList.toggle('muted', !fxOn);
+  pauseFxBtnEl.textContent = fxOn ? 'GLOW ON' : 'GLOW OFF';
+  pauseFxBtnEl.classList.toggle('off', !fxOn);
+  shakeBtnEl.textContent = shakeOn ? 'SHAKE ON' : 'SHAKE OFF';
+  shakeBtnEl.classList.toggle('off', !shakeOn);
+  motionBtnEl.textContent = reducedMotion ? 'MOTION LOW' : 'MOTION FULL';
+  motionBtnEl.classList.toggle('off', reducedMotion);
+  appEl.classList.toggle('reduced-motion', reducedMotion);
+}
+
+function toggleFx() {
   fxOn = !fxOn;
   localStorage.setItem('neonroll_fx', fxOn ? '1' : '0');
-  fxBtn.classList.toggle('muted', !fxOn);
+  renderSettingsBtns();
+}
+fxBtn.addEventListener('click', toggleFx);
+pauseFxBtnEl.addEventListener('click', toggleFx);
+shakeBtnEl.addEventListener('click', () => {
+  shakeOn = !shakeOn;
+  localStorage.setItem('neonroll_shake', shakeOn ? '1' : '0');
+  renderSettingsBtns();
 });
+motionBtnEl.addEventListener('click', () => {
+  reducedMotion = !reducedMotion;
+  localStorage.setItem('neonroll_reduced_motion', reducedMotion ? '1' : '0');
+  renderSettingsBtns();
+});
+renderSettingsBtns();
 
 // ---------------------------------------------------------------- skin picker
 let browseSkin = Math.max(0, SKINS.findIndex((sk) => sk.id === localStorage.getItem('neonroll_skin')));
@@ -1419,6 +1613,87 @@ function updateWalletUI() {
   walletShopEl.textContent = `${gemWallet}`;
   walletMenuEl.textContent = `${gemWallet}`;
   gemCountEl.textContent = `${gemWallet}`;
+}
+
+function todayKey() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function renderDailyReward() {
+  const claimed = localStorage.getItem('neonroll_daily_reward') === todayKey();
+  dailyRewardBtnEl.textContent = claimed ? 'DAILY CLAIMED' : '\u{1F381} DAILY +20';
+  dailyRewardBtnEl.classList.toggle('claimed', claimed);
+}
+
+dailyRewardBtnEl.addEventListener('click', () => {
+  if (localStorage.getItem('neonroll_daily_reward') === todayKey()) {
+    toast('DAILY CLAIMED', 'gold');
+    return;
+  }
+  localStorage.setItem('neonroll_daily_reward', todayKey());
+  gemWallet += 20;
+  saveWallet();
+  updateWalletUI();
+  renderDailyReward();
+  pickupSound();
+  toast('+20 DAILY GEMS', 'gold');
+});
+
+type Mission = {
+  id: string;
+  title: string;
+  goal: number;
+  reward: number;
+  progress: () => number;
+};
+
+const missions: Mission[] = [
+  { id: 'reach-300', title: 'REACH 300M', goal: 300, reward: 10, progress: () => state.best },
+  { id: 'collect-25', title: 'COLLECT 25 GEMS', goal: 25, reward: 12, progress: () => careerStats.gems },
+  { id: 'boost-12', title: 'HIT 12 BOOSTS', goal: 12, reward: 12, progress: () => careerStats.boosts },
+  { id: 'laser-8', title: 'CLEAR 8 LASERS', goal: 8, reward: 14, progress: () => careerStats.lasers },
+];
+
+const completedMissions = new Set<string>(JSON.parse(localStorage.getItem('neonroll_completed_missions') || '[]') as string[]);
+
+function saveCompletedMissions() {
+  localStorage.setItem('neonroll_completed_missions', JSON.stringify([...completedMissions]));
+}
+
+function renderMissions() {
+  const html = missions.map((m) => {
+    const progress = Math.min(m.goal, Math.floor(m.progress()));
+    const pct = Math.round((progress / m.goal) * 100);
+    const done = completedMissions.has(m.id);
+    return `<div class="mission ${done ? 'done' : ''}">
+      <div class="mission-title">${m.title}</div>
+      <div class="mission-progress"><i style="--progress:${pct}%"></i></div>
+      <div class="mission-reward">${done ? 'CLAIMED' : `${progress}/${m.goal} · +${m.reward} \u{1F48E}`}</div>
+    </div>`;
+  }).join('');
+  missionListEl.innerHTML = html;
+  missionListOverEl.innerHTML = html;
+}
+
+function checkMissions() {
+  let rewarded = 0;
+  for (const m of missions) {
+    if (completedMissions.has(m.id) || m.progress() < m.goal) continue;
+    completedMissions.add(m.id);
+    rewarded += m.reward;
+  }
+  if (rewarded > 0) {
+    gemWallet += rewarded;
+    saveWallet();
+    saveCompletedMissions();
+    updateWalletUI();
+    toast(`MISSION +${rewarded} \u{1F48E}`, 'gold');
+  }
+  renderMissions();
 }
 
 function iconDataUrl(draw: CanvasDraw, size = 96): string {
@@ -1482,6 +1757,8 @@ $('shopClose').addEventListener('click', () => {
   menuEl.classList.remove('hidden');
 });
 updateWalletUI();
+renderDailyReward();
+renderMissions();
 
 // ---------------------------------------------------------------- map / level select
 const mapsEl = $('maps');
@@ -1492,13 +1769,14 @@ function renderMaps() {
   ZONES.forEach((z, idx) => {
     const open = zoneUnlocked(z);
     const card = document.createElement('div');
-    card.className = 'card';
+    card.className = open ? 'card' : 'card locked-card';
+    const progress = Math.min(100, Math.round((state.total / Math.max(1, z.unlockTotal)) * 100));
     const status = open
       ? idx === selectedMap
         ? '<span class="tag selected">SELECTED</span>'
         : '<span class="tag owned">TAP TO SELECT</span>'
-      : `<span class="tag locked">LV.${idx + 1} · ${(z.unlockTotal / 1000).toFixed(1)} KM</span>`;
-    card.innerHTML = `<div class="thumb map" style="background:${z.floor}"><i style="background:${z.rail}"></i><i style="background:${z.stripe}"></i><i style="background:${z.star}"></i></div><div class="card-name">LV.${idx + 1} ${z.name}</div>${status}`;
+      : `<span class="tag locked">${Math.floor(state.total)} / ${z.unlockTotal}M</span><div class="map-progress"><i style="--progress:${progress}%"></i></div>`;
+    card.innerHTML = `<div class="thumb map"><img src="${z.preview}" alt="${z.name} preview" loading="lazy"></div><div class="card-name">LV.${idx + 1} ${z.name}</div>${status}`;
     card.addEventListener('click', () => {
       if (!open) {
         rejectCard(card);
@@ -1587,6 +1865,7 @@ function resetPowers() {
   powers.x2 = 0;
   powers.ghost = 0;
   powers.invuln = 0;
+  powers.boost = 0;
   shieldMesh.visible = false;
   setBallOpacity(1);
   scoreEl.classList.remove('x2');
@@ -1625,6 +1904,11 @@ function startRun() {
   lastMilestone = 0;
   newBestToastShown = false;
   reviveUsed = false;
+  airDeathReason = 'Fell off track';
+  lastDeathReason = 'Crashed';
+  runStats.gems = 0;
+  runStats.boosts = 0;
+  runStats.lasers = 0;
   zoneIdx = 0;
   computeRunRotation();
   setZoneTargets(0);
@@ -1675,6 +1959,8 @@ function goToMenu() {
   overEl.classList.add('hidden');
   hudEl.classList.add('hidden');
   showBest();
+  checkMissions();
+  renderDailyReward();
   renderSkinPicker();
   menuEl.classList.remove('hidden');
 }
@@ -1692,17 +1978,21 @@ function animateFinalScore(to: number) {
   tickUp();
 }
 
-function die() {
+function die(reason = 'Crashed') {
   if (state.phase !== 'run') return;
   state.phase = 'over';
+  lastDeathReason = reason;
+  deathReasonEl.textContent = reason.toUpperCase();
   crashSound();
   setHum(0, false);
   stopMusic();
   sdkStop();
   flashVignette('flash');
-  appEl.classList.remove('shake');
-  void appEl.offsetWidth;
-  appEl.classList.add('shake');
+  if (shakeOn) {
+    appEl.classList.remove('shake');
+    void appEl.offsetWidth;
+    appEl.classList.add('shake');
+  }
   // shatter the ball
   burst(state.x, state.y, state.z, '#ff2e55', 18, 11);
   burst(state.x, state.y, state.z, '#19e6ff', 12, 8);
@@ -1721,6 +2011,7 @@ function die() {
   localStorage.setItem('neonroll_best', String(state.best));
   localStorage.setItem('neonroll_runs', String(state.runs));
   localStorage.setItem('neonroll_total', String(state.total));
+  checkMissions();
   showBest();
 
   statSpeedEl.textContent = `${Math.round(state.topSpeed * 3.6)}`;
@@ -1826,6 +2117,44 @@ function breakShield(o: Ob) {
   }
 }
 
+function breakLaser(l: Laser) {
+  l.dead = true;
+  powers.shield = 0;
+  powers.invuln = 0.6;
+  hitstop = 0.1;
+  shieldMesh.visible = false;
+  shieldBreakSound();
+  flashVignette('flash-cyan');
+  toast('SHIELD BROKE!');
+  for (const rec of segMeshes.values()) {
+    const hit = rec.lasers.find((e) => e.l === l);
+    if (hit) {
+      hit.meshes.forEach((mesh) => scene.remove(mesh));
+      rec.lasers = rec.lasers.filter((e) => e.l !== l);
+      break;
+    }
+  }
+}
+
+function triggerBoost(b: Boost) {
+  b.taken = true;
+  powers.boost = BOOST_DURATION;
+  runStats.boosts += 1;
+  careerStats.boosts += 1;
+  saveCareerStats();
+  fovKick = 9;
+  pickupSound();
+  flashVignette('flash-cyan');
+  toast('BOOST!', 'gold');
+  for (const rec of segMeshes.values()) {
+    const hit = rec.boosts.find((e) => e.b === b);
+    if (hit) {
+      hit.mesh.visible = false;
+      break;
+    }
+  }
+}
+
 // ---------------------------------------------------------------- physics
 // resting ball-center height for a given gravity side
 function restY(z: number, g: 1 | -1): number {
@@ -1849,19 +2178,20 @@ function flipGravity() {
 function step(dt: number) {
   state.time += dt;
   state.speed = Math.min(SPEED_MAX, state.speed + ACCEL * dt);
-  state.topSpeed = Math.max(state.topSpeed, state.speed);
 
   // power timers
   powers.invuln = Math.max(0, powers.invuln - dt);
   powers.slow = Math.max(0, powers.slow - dt);
   powers.x2 = Math.max(0, powers.x2 - dt);
+  powers.boost = Math.max(0, powers.boost - dt);
   if (powers.ghost > 0) {
     powers.ghost = Math.max(0, powers.ghost - dt);
     if (powers.ghost === 0) setBallOpacity(1);
   }
   if (powers.x2 === 0) scoreEl.classList.remove('x2');
 
-  const moveSpeed = state.speed * (powers.slow > 0 ? 0.55 : 1);
+  const moveSpeed = state.speed * (powers.slow > 0 ? 0.55 : 1) * (powers.boost > 0 ? BOOST_MULT : 1);
+  state.topSpeed = Math.max(state.topSpeed, moveSpeed);
 
   // lateral
   const targetVx = readSteer() * moveSpeed * LAT_FACTOR;
@@ -1916,11 +2246,13 @@ function step(dt: number) {
       const offSide = Math.abs(state.x - xCenter(state.z)) >= HALF_W + 0.3;
       if (offSide) {
         // slid off the side: plain fall, away from the surface
+        airDeathReason = 'Fell off track';
         state.vy = -state.speed * 0.28 * g;
       } else {
         // ran off the lip of a gap: hop (top side) / dive (underside) just enough
         // to reach the far lip. The track descends ~0.28/unit, which helps the top
         // side and works against the underside, hence the g-signed slope term.
+        airDeathReason = 'Missed gap';
         const T = SEG_LEN / moveSpeed;
         const slopeDrop = 0.28 * SEG_LEN;
         const mag = 0.5 * GRAVITY * T - (g * slopeDrop) / T + 1.2;
@@ -1937,7 +2269,7 @@ function step(dt: number) {
       state.vy = 0;
       state.grounded = true;
     }
-    if ((state.y - groundY) * g < -3) die();
+    if ((state.y - groundY) * g < -3) die(airDeathReason);
   }
 
   const nearGround = Math.abs(state.y - groundY) < 1.5;
@@ -1947,6 +2279,14 @@ function step(dt: number) {
     for (let i = segIdx - 1; i <= segIdx + 1; i++) {
       if (i < 0) continue;
       const inf = segInfo(i);
+      for (const b of inf.boosts) {
+        if (b.taken || b.side !== g) continue;
+        const bx = xCenter(b.z);
+        if (zPrev < b.z && state.z >= b.z && Math.abs(state.x - bx) < 3.4) {
+          triggerBoost(b);
+          checkMissions();
+        }
+      }
       const it = inf.item;
       if (it && !it.taken && it.side === g) {
         const ix = it.x + xCenter(it.z);
@@ -1977,8 +2317,12 @@ function step(dt: number) {
           }
           state.score += GEM_SCORE * (powers.x2 > 0 ? 2 : 1);
           gemWallet += 1;
+          runStats.gems += 1;
+          careerStats.gems += 1;
+          saveCareerStats();
           saveWallet();
           gemCountEl.textContent = `${gemWallet}`;
+          checkMissions();
           gemSound();
           burst(gx, itemY(gm.side, gm.z), gm.z, '#8affd0', 6, 5);
         }
@@ -1986,15 +2330,32 @@ function step(dt: number) {
     }
   }
 
-  // obstacles (check neighbouring segments, same side only)
+  // obstacles + laser gates (check neighbouring segments, same side only)
   if (nearGround && powers.ghost === 0 && powers.invuln === 0) {
     for (let i = segIdx - 1; i <= segIdx + 1; i++) {
       if (i < 0) continue;
+      for (const l of segInfo(i).lasers) {
+        if (l.side !== g || l.dead) continue;
+        if (zPrev < l.z && state.z >= l.z) {
+          const safe = Math.abs(state.x - (xCenter(l.z) + l.gapX)) < 1.55;
+          if (safe) {
+            runStats.lasers += 1;
+            careerStats.lasers += 1;
+            saveCareerStats();
+            checkMissions();
+          } else if (powers.shield > 0) {
+            breakLaser(l);
+          } else {
+            die('Laser gate');
+          }
+          return;
+        }
+      }
       for (const o of segInfo(i).obstacles) {
         if (o.side !== g || o.dead) continue;
         if (Math.abs(state.z - o.z) < 0.85 + BALL_R && Math.abs(state.x - obX(o)) < 0.85 + BALL_R) {
           if (powers.shield > 0) breakShield(o);
-          else die();
+          else die('Hit obstacle');
           return;
         }
       }
@@ -2027,9 +2388,11 @@ function tick(rawDt: number) {
   if (state.phase === 'run') {
     step(dt);
     setHum(state.speed, true);
+    const displaySpeed = state.speed * (powers.slow > 0 ? 0.55 : 1) * (powers.boost > 0 ? BOOST_MULT : 1);
     scoreEl.textContent = `${Math.floor(state.score)}`;
-    speedEl.textContent = `${Math.round(state.speed * 3.6)} km/h`;
-    speedFillEl.style.width = `${Math.round((state.speed / SPEED_MAX) * 100)}%`;
+    speedEl.textContent = `${Math.round(displaySpeed * 3.6)} km/h`;
+    speedFillEl.style.width = `${Math.min(100, Math.round((displaySpeed / SPEED_MAX) * 100))}%`;
+    hudEl.classList.toggle('fast', displaySpeed > 48);
 
     // power chips
     pChips.shield.chip.classList.toggle('hidden', powers.shield === 0);
@@ -2039,6 +2402,8 @@ function tick(rawDt: number) {
     if (pChips.x2.bar) pChips.x2.bar.style.width = `${(powers.x2 / 10) * 100}%`;
     pChips.ghost.chip.classList.toggle('hidden', powers.ghost === 0);
     if (pChips.ghost.bar) pChips.ghost.bar.style.width = `${(powers.ghost / 5) * 100}%`;
+  } else {
+    hudEl.classList.remove('fast');
   }
 
   updateTrack(state.z);
@@ -2056,8 +2421,9 @@ function tick(rawDt: number) {
   floorMat.color.copy(zoneBase.floor);
   obMat.color.copy(zoneBase.ob);
   starsMat.color.copy(zoneBase.star);
-  railMat.color.copy(zoneBase.rail).multiplyScalar(1 + pulse * 0.5);
-  stripeMat.color.copy(zoneBase.stripe).multiplyScalar(1 + pulse * 0.5);
+  const neonBrightness = NEON_BASE_BRIGHTNESS + pulse * NEON_BEAT_BOOST;
+  railMat.color.copy(zoneBase.rail).multiplyScalar(neonBrightness);
+  stripeMat.color.copy(zoneBase.stripe).multiplyScalar(neonBrightness);
   (scene.fog as THREE.Fog).color.copy(zoneBase.fog);
   (scene.background as THREE.Color).copy(zoneBase.fog);
   ballGroup.scale.setScalar(1 + pulse * 0.05);
