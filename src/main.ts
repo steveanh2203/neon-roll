@@ -298,15 +298,15 @@ let starsMat: THREE.PointsMaterial;
 // ---------------------------------------------------------------- gem wallet & ownership (shop currency)
 let gemWallet = Number(localStorage.getItem('neonroll_gems') || 0);
 const ownedSkins = new Set<string>(JSON.parse(localStorage.getItem('neonroll_owned_skins') || '[]') as string[]);
-const ownedMaps = new Set<number>(JSON.parse(localStorage.getItem('neonroll_owned_maps') || '[]') as number[]);
 
 function saveWallet() {
   localStorage.setItem('neonroll_gems', String(gemWallet));
   localStorage.setItem('neonroll_owned_skins', JSON.stringify([...ownedSkins]));
-  localStorage.setItem('neonroll_owned_maps', JSON.stringify([...ownedMaps]));
 }
 
-// ---------------------------------------------------------------- zones (map variety)
+// ---------------------------------------------------------------- maps as levels (unlocked by lifetime distance)
+type Decor = 'none' | 'water' | 'trees' | 'rocks';
+
 interface Zone {
   name: string;
   floor: string;
@@ -315,25 +315,48 @@ interface Zone {
   ob: string;
   fog: string;
   star: string;
-  price: number; // 0 = free, otherwise purchasable in the shop
+  unlockTotal: number; // lifetime meters needed to unlock this level
+  decor: Decor;
 }
 
 const ZONES: Zone[] = [
-  { name: 'NEON CITY', floor: '#141034', rail: '#19e6ff', stripe: '#ff2ea6', ob: '#ff2e55', fog: '#0a0618', star: '#8fa4ff', price: 0 },
-  { name: 'INFERNO', floor: '#200a06', rail: '#ffb020', stripe: '#ff5722', ob: '#ff1744', fog: '#170503', star: '#ffb28a', price: 0 },
-  { name: 'TOXIC', floor: '#0a1a0c', rail: '#7fff00', stripe: '#00e676', ob: '#ff2e55', fog: '#04120a', star: '#a8ffb0', price: 0 },
-  { name: 'FROST', floor: '#0d1626', rail: '#b3e5fc', stripe: '#40c4ff', ob: '#ff2e55', fog: '#0a1220', star: '#e0f2ff', price: 0 },
-  { name: 'VOID', floor: '#16081f', rail: '#d500f9', stripe: '#ffd54d', ob: '#ff2e55', fog: '#0d0214', star: '#e2b0ff', price: 0 },
-  { name: 'SUNSET DRIVE', floor: '#1d0f24', rail: '#ff8a3d', stripe: '#ff3d81', ob: '#ff1744', fog: '#150818', star: '#ffc9a0', price: 200 },
-  { name: 'DEEP OCEAN', floor: '#04141f', rail: '#2ee6c8', stripe: '#1e88e5', ob: '#ff2e55', fog: '#02101a', star: '#a8e6ff', price: 300 },
-  { name: 'SAKURA', floor: '#1f1420', rail: '#ffb7d5', stripe: '#ff5c8a', ob: '#ff1744', fog: '#170d18', star: '#ffd9e8', price: 400 },
-  { name: 'GOLDEN DESERT', floor: '#201704', rail: '#ffd54d', stripe: '#ff9100', ob: '#ff2e55', fog: '#171004', star: '#ffe9b0', price: 500 },
-  { name: 'BLOOD MOON', floor: '#1a0505', rail: '#ff6b6b', stripe: '#ff9e80', ob: '#f5f5f5', fog: '#120303', star: '#ff8a80', price: 700 },
+  { name: 'NEON CITY', floor: '#141034', rail: '#19e6ff', stripe: '#ff2ea6', ob: '#ff2e55', fog: '#0a0618', star: '#8fa4ff', unlockTotal: 0, decor: 'none' },
+  { name: 'RIVERSIDE', floor: '#0b1d22', rail: '#4dd0e1', stripe: '#80deea', ob: '#ff2e55', fog: '#06141a', star: '#b2ebf2', unlockTotal: 500, decor: 'water' },
+  { name: 'DEEP OCEAN', floor: '#041525', rail: '#29b6f6', stripe: '#0277bd', ob: '#ff2e55', fog: '#021020', star: '#81d4fa', unlockTotal: 1500, decor: 'water' },
+  { name: 'TROPIC BEACH', floor: '#23190b', rail: '#ffd54d', stripe: '#ff8a65', ob: '#ff2e55', fog: '#1a1208', star: '#ffe0b2', unlockTotal: 3000, decor: 'water' },
+  { name: 'EMERALD FOREST', floor: '#0c1c10', rail: '#66bb6a', stripe: '#b2ff59', ob: '#ff2e55', fog: '#071408', star: '#c8e6c9', unlockTotal: 5000, decor: 'trees' },
+  { name: 'MISTY MOUNTAIN', floor: '#141a24', rail: '#b0bec5', stripe: '#eceff1', ob: '#ff2e55', fog: '#10151d', star: '#ffffff', unlockTotal: 8000, decor: 'rocks' },
+  { name: 'GOLDEN DESERT', floor: '#201704', rail: '#ffb300', stripe: '#ff9100', ob: '#ff2e55', fog: '#171004', star: '#ffe9b0', unlockTotal: 12000, decor: 'rocks' },
+  { name: 'VOLCANO', floor: '#200a06', rail: '#ffb020', stripe: '#ff5722', ob: '#f5f5f5', fog: '#170503', star: '#ffb28a', unlockTotal: 17000, decor: 'rocks' },
+  { name: 'AURORA', floor: '#0d1626', rail: '#80ffdb', stripe: '#b388ff', ob: '#ff2e55', fog: '#0a1220', star: '#e0f2ff', unlockTotal: 23000, decor: 'none' },
+  { name: 'GALAXY VOID', floor: '#16081f', rail: '#d500f9', stripe: '#ffd54d', ob: '#ff2e55', fog: '#0d0214', star: '#e2b0ff', unlockTotal: 30000, decor: 'none' },
 ];
 
-// only owned maps enter the zone rotation (first five are free)
-function zoneRotation(): Zone[] {
-  return ZONES.filter((z, i) => z.price === 0 || ownedMaps.has(i));
+function zoneUnlocked(z: Zone): boolean {
+  return state.total >= z.unlockTotal;
+}
+
+function playerLevel(): number {
+  return ZONES.filter(zoneUnlocked).length;
+}
+
+let selectedMap = Number(localStorage.getItem('neonroll_map') || 0);
+
+// the in-run rotation: unlocked maps, starting from the player's selected one.
+// captured at run start so mid-run unlocks don't shift the track under the ball.
+let runRotation: Zone[] = [ZONES[0]];
+
+function computeRunRotation() {
+  const open = ZONES.filter(zoneUnlocked);
+  if (selectedMap >= ZONES.length || !zoneUnlocked(ZONES[selectedMap])) selectedMap = 0;
+  const startAt = open.indexOf(ZONES[selectedMap]);
+  runRotation = startAt <= 0 ? open : [...open.slice(startAt), ...open.slice(0, startAt)];
+  if (runRotation.length === 0) runRotation = [ZONES[0]];
+}
+
+function zoneAt(z: number): Zone {
+  const zi = Math.max(0, Math.floor((z - 6) / ZONE_LEN));
+  return runRotation[zi % runRotation.length];
 }
 
 let zoneIdx = 0;
@@ -357,8 +380,7 @@ const zoneBase = {
 };
 
 function setZoneTargets(zi: number) {
-  const rot = zoneRotation();
-  const zn = rot[zi % rot.length];
+  const zn = runRotation[zi % runRotation.length];
   zoneTarget.floor.set(zn.floor);
   zoneTarget.rail.set(zn.rail);
   zoneTarget.stripe.set(zn.stripe);
@@ -906,6 +928,34 @@ const itemGeo = new THREE.OctahedronGeometry(0.8, 0);
 const gemGeo = new THREE.OctahedronGeometry(0.34, 0);
 const gemMat = new THREE.MeshBasicMaterial({ color: '#8affd0' });
 
+// per-map roadside decor
+const treeGeo = new THREE.ConeGeometry(1.6, 4.2, 6);
+const treeMats = [new THREE.MeshBasicMaterial({ color: '#1e9e57' }), new THREE.MeshBasicMaterial({ color: '#136b3a' })];
+const rockGeo = new THREE.IcosahedronGeometry(1.6, 0);
+const rockMats = new Map<string, THREE.MeshBasicMaterial>();
+const waterGeo = new THREE.PlaneGeometry(150, SEG_LEN + 0.6);
+const waterMats = new Map<string, THREE.MeshBasicMaterial>();
+
+function rockMatFor(zn: Zone): THREE.MeshBasicMaterial {
+  const key = zn.name;
+  let m = rockMats.get(key);
+  if (!m) {
+    const col = zn.name === 'GOLDEN DESERT' ? '#a8873f' : zn.name === 'VOLCANO' ? '#4a2c26' : '#5c6b7a';
+    m = new THREE.MeshBasicMaterial({ color: col });
+    rockMats.set(key, m);
+  }
+  return m;
+}
+
+function waterMatFor(zn: Zone): THREE.MeshBasicMaterial {
+  let m = waterMats.get(zn.rail);
+  if (!m) {
+    m = new THREE.MeshBasicMaterial({ color: zn.rail, transparent: true, opacity: 0.15, side: THREE.DoubleSide });
+    waterMats.set(zn.rail, m);
+  }
+  return m;
+}
+
 const floorMat = new THREE.MeshBasicMaterial({ color: ZONES[0].floor });
 const railMat = new THREE.MeshBasicMaterial({ color: ZONES[0].rail });
 const stripeMat = new THREE.MeshBasicMaterial({ color: ZONES[0].stripe });
@@ -1104,6 +1154,37 @@ function buildSeg(i: number) {
       group.add(railL, railR, stripe);
     }
 
+    // roadside decor for the map at this distance
+    const zn = zoneAt((z0 + z1) / 2);
+    if (zn.decor === 'water') {
+      const w = new THREE.Mesh(waterGeo, waterMatFor(zn));
+      w.rotation.x = -Math.PI / 2;
+      w.position.set(0, -5, 0);
+      group.add(w);
+    } else if (zn.decor === 'trees') {
+      const rng2 = mulberry32((seed ^ Math.imul(i + 77, 0x85ebca6b)) >>> 0);
+      const count = 2 + Math.floor(rng2() * 3);
+      for (let k = 0; k < count; k++) {
+        const side = rng2() < 0.5 ? -1 : 1;
+        const tree = new THREE.Mesh(treeGeo, treeMats[Math.floor(rng2() * treeMats.length)]);
+        const sc = 0.7 + rng2() * 1.6;
+        tree.scale.setScalar(sc);
+        tree.position.set(side * (HALF_W + 3 + rng2() * 9), sc * 2.1 + 0.5, (rng2() - 0.5) * SEG_LEN);
+        group.add(tree);
+      }
+    } else if (zn.decor === 'rocks') {
+      const rng2 = mulberry32((seed ^ Math.imul(i + 133, 0xc2b2ae35)) >>> 0);
+      const count = 1 + Math.floor(rng2() * 3);
+      for (let k = 0; k < count; k++) {
+        const side = rng2() < 0.5 ? -1 : 1;
+        const rock = new THREE.Mesh(rockGeo, rockMatFor(zn));
+        rock.scale.set(0.6 + rng2() * 2.4, 0.5 + rng2() * 1.6, 0.6 + rng2() * 2);
+        rock.rotation.y = rng2() * Math.PI;
+        rock.position.set(side * (HALF_W + 3.5 + rng2() * 10), 0.3, (rng2() - 0.5) * SEG_LEN);
+        group.add(rock);
+      }
+    }
+
     if (info.gate) {
       const postL = new THREE.Mesh(gatePostGeo, gateMat);
       postL.position.set(-(HALF_W + 0.5), 0, 0);
@@ -1219,6 +1300,8 @@ const statSpeedEl = $('statSpeed');
 const statFlipsEl = $('statFlips');
 const statBestEl = $('statBest');
 const newBestEl = $('newBest');
+const unlockMsgEl = $('unlockMsg');
+const lvMenuEl = $('lvMenu');
 const reviveBtnEl = $('reviveBtn') as HTMLButtonElement;
 const toastEl = $('toast');
 const goEl = $('go');
@@ -1236,7 +1319,8 @@ const pChips: Record<Exclude<PowerKind, never>, { chip: HTMLElement; bar: HTMLEl
 function showBest() {
   bestMenuEl.textContent = state.best > 0 ? `BEST ${state.best}m` : '';
   const km = (state.total / 1000).toFixed(1);
-  statsMenuEl.textContent = state.runs > 0 ? `${state.runs} RUNS · ${km} KM ROLLED` : '';
+  statsMenuEl.textContent = state.runs > 0 ? `LV.${playerLevel()} · ${state.runs} RUNS · ${km} KM ROLLED` : '';
+  lvMenuEl.textContent = `${playerLevel()}`;
 }
 showBest();
 
@@ -1330,9 +1414,6 @@ const shopEl = $('shop');
 const shopGridEl = $('shopGrid');
 const walletShopEl = $('walletShop');
 const walletMenuEl = $('walletMenu');
-const tabBallsEl = $('tabBalls');
-const tabMapsEl = $('tabMaps');
-let shopTab: 'balls' | 'maps' = 'balls';
 
 function updateWalletUI() {
   walletShopEl.textContent = `${gemWallet}`;
@@ -1356,77 +1437,43 @@ function rejectCard(card: HTMLElement) {
 function renderShop() {
   updateWalletUI();
   shopGridEl.innerHTML = '';
-  if (shopTab === 'balls') {
-    SKINS.forEach((sk, idx) => {
-      const card = document.createElement('div');
-      card.className = 'card';
-      const open = sk.unlocked();
-      const status = open
-        ? idx === activeSkin
-          ? '<span class="tag selected">SELECTED</span>'
-          : '<span class="tag owned">OWNED</span>'
-        : sk.price > 0
-          ? `<button class="buy">${sk.price} \u{1F48E}</button>`
-          : `<span class="tag locked">${sk.lockText}</span>`;
-      card.innerHTML = `<img class="thumb ball" src="${iconDataUrl(sk.icon)}" alt=""><div class="card-name">${sk.name}</div>${status}`;
-      card.addEventListener('click', () => {
-        if (sk.unlocked()) {
-          browseSkin = idx;
-          applySkin(idx);
-          renderShop();
-        } else if (sk.price > 0 && gemWallet >= sk.price) {
-          gemWallet -= sk.price;
-          ownedSkins.add(sk.id);
-          saveWallet();
-          browseSkin = idx;
-          applySkin(idx);
-          pickupSound();
-          renderShop();
-        } else {
-          rejectCard(card);
-        }
-      });
-      shopGridEl.appendChild(card);
+  SKINS.forEach((sk, idx) => {
+    const card = document.createElement('div');
+    card.className = 'card';
+    const open = sk.unlocked();
+    const status = open
+      ? idx === activeSkin
+        ? '<span class="tag selected">SELECTED</span>'
+        : '<span class="tag owned">OWNED</span>'
+      : sk.price > 0
+        ? `<button class="buy">${sk.price} \u{1F48E}</button>`
+        : `<span class="tag locked">${sk.lockText}</span>`;
+    card.innerHTML = `<img class="thumb ball" src="${iconDataUrl(sk.icon)}" alt=""><div class="card-name">${sk.name}</div>${status}`;
+    card.addEventListener('click', () => {
+      if (sk.unlocked()) {
+        browseSkin = idx;
+        applySkin(idx);
+        renderShop();
+      } else if (sk.price > 0 && gemWallet >= sk.price) {
+        gemWallet -= sk.price;
+        ownedSkins.add(sk.id);
+        saveWallet();
+        browseSkin = idx;
+        applySkin(idx);
+        pickupSound();
+        renderShop();
+      } else {
+        rejectCard(card);
+      }
     });
-  } else {
-    ZONES.forEach((z, idx) => {
-      const card = document.createElement('div');
-      card.className = 'card';
-      const owned = z.price === 0 || ownedMaps.has(idx);
-      const status = owned
-        ? '<span class="tag owned">IN ROTATION</span>'
-        : `<button class="buy">${z.price} \u{1F48E}</button>`;
-      card.innerHTML = `<div class="thumb map" style="background:${z.floor}"><i style="background:${z.rail}"></i><i style="background:${z.stripe}"></i><i style="background:${z.star}"></i></div><div class="card-name">${z.name}</div>${status}`;
-      card.addEventListener('click', () => {
-        if (owned) return;
-        if (gemWallet >= z.price) {
-          gemWallet -= z.price;
-          ownedMaps.add(idx);
-          saveWallet();
-          pickupSound();
-          renderShop();
-        } else {
-          rejectCard(card);
-        }
-      });
-      shopGridEl.appendChild(card);
-    });
-  }
+    shopGridEl.appendChild(card);
+  });
 }
-
-function setShopTab(tab: 'balls' | 'maps') {
-  shopTab = tab;
-  tabBallsEl.classList.toggle('active', tab === 'balls');
-  tabMapsEl.classList.toggle('active', tab === 'maps');
-  renderShop();
-}
-tabBallsEl.addEventListener('click', () => setShopTab('balls'));
-tabMapsEl.addEventListener('click', () => setShopTab('maps'));
 
 $('shopBtn').addEventListener('click', () => {
   menuEl.classList.add('hidden');
   shopEl.classList.remove('hidden');
-  setShopTab('balls');
+  renderShop();
 });
 $('shopClose').addEventListener('click', () => {
   shopEl.classList.add('hidden');
@@ -1435,6 +1482,51 @@ $('shopClose').addEventListener('click', () => {
   menuEl.classList.remove('hidden');
 });
 updateWalletUI();
+
+// ---------------------------------------------------------------- map / level select
+const mapsEl = $('maps');
+const mapsGridEl = $('mapsGrid');
+
+function renderMaps() {
+  mapsGridEl.innerHTML = '';
+  ZONES.forEach((z, idx) => {
+    const open = zoneUnlocked(z);
+    const card = document.createElement('div');
+    card.className = 'card';
+    const status = open
+      ? idx === selectedMap
+        ? '<span class="tag selected">SELECTED</span>'
+        : '<span class="tag owned">TAP TO SELECT</span>'
+      : `<span class="tag locked">LV.${idx + 1} · ${(z.unlockTotal / 1000).toFixed(1)} KM</span>`;
+    card.innerHTML = `<div class="thumb map" style="background:${z.floor}"><i style="background:${z.rail}"></i><i style="background:${z.stripe}"></i><i style="background:${z.star}"></i></div><div class="card-name">LV.${idx + 1} ${z.name}</div>${status}`;
+    card.addEventListener('click', () => {
+      if (!open) {
+        rejectCard(card);
+        return;
+      }
+      selectedMap = idx;
+      localStorage.setItem('neonroll_map', String(idx));
+      computeRunRotation();
+      setZoneTargets(0); // live preview: the menu world recolors to the chosen map
+      renderMaps();
+    });
+    mapsGridEl.appendChild(card);
+  });
+}
+
+$('mapBtn').addEventListener('click', () => {
+  menuEl.classList.add('hidden');
+  renderMaps();
+  mapsEl.classList.remove('hidden');
+});
+$('mapsClose').addEventListener('click', () => {
+  mapsEl.classList.add('hidden');
+  showBest();
+  menuEl.classList.remove('hidden');
+});
+
+computeRunRotation();
+setZoneTargets(0);
 
 // ---------------------------------------------------------------- input
 const keys: Record<string, boolean> = {};
@@ -1534,6 +1626,7 @@ function startRun() {
   newBestToastShown = false;
   reviveUsed = false;
   zoneIdx = 0;
+  computeRunRotation();
   setZoneTargets(0);
   resetPowers();
   ballSpin.visible = true;
@@ -1618,9 +1711,13 @@ function die() {
 
   const score = Math.floor(state.score);
   const isNewBest = score > 0 && score > state.best;
+  const levelBefore = playerLevel();
   state.best = Math.max(state.best, score);
   state.runs += 1;
   state.total += score;
+  const newMaps = ZONES.filter((z) => z.unlockTotal > state.total - score && z.unlockTotal <= state.total);
+  unlockMsgEl.classList.toggle('hidden', playerLevel() === levelBefore);
+  if (newMaps.length > 0) unlockMsgEl.textContent = `\u{1F5FA} NEW MAP · ${newMaps.map((z) => z.name).join(' + ')}`;
   localStorage.setItem('neonroll_best', String(state.best));
   localStorage.setItem('neonroll_runs', String(state.runs));
   localStorage.setItem('neonroll_total', String(state.total));
@@ -1782,8 +1879,7 @@ function step(dt: number) {
   if (zi !== zoneIdx) {
     zoneIdx = zi;
     setZoneTargets(zi);
-    const rot = zoneRotation();
-    toast(`ZONE ${zi + 1} · ${rot[zi % rot.length].name}`, 'gold');
+    toast(`ZONE ${zi + 1} · ${runRotation[zi % runRotation.length].name}`, 'gold');
   }
 
   // milestone + new-best toasts
