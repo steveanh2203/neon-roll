@@ -295,6 +295,17 @@ let starsMat: THREE.PointsMaterial;
   scene.add(stars);
 }
 
+// ---------------------------------------------------------------- gem wallet & ownership (shop currency)
+let gemWallet = Number(localStorage.getItem('neonroll_gems') || 0);
+const ownedSkins = new Set<string>(JSON.parse(localStorage.getItem('neonroll_owned_skins') || '[]') as string[]);
+const ownedMaps = new Set<number>(JSON.parse(localStorage.getItem('neonroll_owned_maps') || '[]') as number[]);
+
+function saveWallet() {
+  localStorage.setItem('neonroll_gems', String(gemWallet));
+  localStorage.setItem('neonroll_owned_skins', JSON.stringify([...ownedSkins]));
+  localStorage.setItem('neonroll_owned_maps', JSON.stringify([...ownedMaps]));
+}
+
 // ---------------------------------------------------------------- zones (map variety)
 interface Zone {
   name: string;
@@ -304,15 +315,26 @@ interface Zone {
   ob: string;
   fog: string;
   star: string;
+  price: number; // 0 = free, otherwise purchasable in the shop
 }
 
 const ZONES: Zone[] = [
-  { name: 'NEON CITY', floor: '#141034', rail: '#19e6ff', stripe: '#ff2ea6', ob: '#ff2e55', fog: '#0a0618', star: '#8fa4ff' },
-  { name: 'INFERNO', floor: '#200a06', rail: '#ffb020', stripe: '#ff5722', ob: '#ff1744', fog: '#170503', star: '#ffb28a' },
-  { name: 'TOXIC', floor: '#0a1a0c', rail: '#7fff00', stripe: '#00e676', ob: '#ff2e55', fog: '#04120a', star: '#a8ffb0' },
-  { name: 'FROST', floor: '#0d1626', rail: '#b3e5fc', stripe: '#40c4ff', ob: '#ff2e55', fog: '#0a1220', star: '#e0f2ff' },
-  { name: 'VOID', floor: '#16081f', rail: '#d500f9', stripe: '#ffd54d', ob: '#ff2e55', fog: '#0d0214', star: '#e2b0ff' },
+  { name: 'NEON CITY', floor: '#141034', rail: '#19e6ff', stripe: '#ff2ea6', ob: '#ff2e55', fog: '#0a0618', star: '#8fa4ff', price: 0 },
+  { name: 'INFERNO', floor: '#200a06', rail: '#ffb020', stripe: '#ff5722', ob: '#ff1744', fog: '#170503', star: '#ffb28a', price: 0 },
+  { name: 'TOXIC', floor: '#0a1a0c', rail: '#7fff00', stripe: '#00e676', ob: '#ff2e55', fog: '#04120a', star: '#a8ffb0', price: 0 },
+  { name: 'FROST', floor: '#0d1626', rail: '#b3e5fc', stripe: '#40c4ff', ob: '#ff2e55', fog: '#0a1220', star: '#e0f2ff', price: 0 },
+  { name: 'VOID', floor: '#16081f', rail: '#d500f9', stripe: '#ffd54d', ob: '#ff2e55', fog: '#0d0214', star: '#e2b0ff', price: 0 },
+  { name: 'SUNSET DRIVE', floor: '#1d0f24', rail: '#ff8a3d', stripe: '#ff3d81', ob: '#ff1744', fog: '#150818', star: '#ffc9a0', price: 200 },
+  { name: 'DEEP OCEAN', floor: '#04141f', rail: '#2ee6c8', stripe: '#1e88e5', ob: '#ff2e55', fog: '#02101a', star: '#a8e6ff', price: 300 },
+  { name: 'SAKURA', floor: '#1f1420', rail: '#ffb7d5', stripe: '#ff5c8a', ob: '#ff1744', fog: '#170d18', star: '#ffd9e8', price: 400 },
+  { name: 'GOLDEN DESERT', floor: '#201704', rail: '#ffd54d', stripe: '#ff9100', ob: '#ff2e55', fog: '#171004', star: '#ffe9b0', price: 500 },
+  { name: 'BLOOD MOON', floor: '#1a0505', rail: '#ff6b6b', stripe: '#ff9e80', ob: '#f5f5f5', fog: '#120303', star: '#ff8a80', price: 700 },
 ];
+
+// only owned maps enter the zone rotation (first five are free)
+function zoneRotation(): Zone[] {
+  return ZONES.filter((z, i) => z.price === 0 || ownedMaps.has(i));
+}
 
 let zoneIdx = 0;
 const zoneTarget = {
@@ -335,7 +357,8 @@ const zoneBase = {
 };
 
 function setZoneTargets(zi: number) {
-  const zn = ZONES[zi % ZONES.length];
+  const rot = zoneRotation();
+  const zn = rot[zi % rot.length];
   zoneTarget.floor.set(zn.floor);
   zoneTarget.rail.set(zn.rail);
   zoneTarget.stripe.set(zn.stripe);
@@ -481,19 +504,315 @@ function texturedBall(draw: (ctx: CanvasRenderingContext2D, s: number) => void):
   return new THREE.Mesh(sphereGeo, new THREE.MeshBasicMaterial({ map: makeTexture(draw) }));
 }
 
+type CanvasDraw = (ctx: CanvasRenderingContext2D, s: number) => void;
+
 interface Skin {
   id: string;
   name: string;
-  lockText: string;
+  lockText: string; // achievement condition text ('' if purchasable/free)
+  price: number; // 0 = achievement/free, otherwise gem price in the shop
+  icon: CanvasDraw; // used for shop card thumbnails
   unlocked: () => boolean;
   build: () => THREE.Object3D;
 }
 
+// ---------- texture painters (shared by ball material + shop thumbnails)
+const drawBasket: CanvasDraw = (ctx, s) => {
+  ctx.fillStyle = '#e65f1e';
+  ctx.fillRect(0, 0, s, s);
+  ctx.strokeStyle = '#241205';
+  ctx.lineWidth = s * 0.035;
+  ctx.beginPath(); ctx.moveTo(s / 2, 0); ctx.lineTo(s / 2, s); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(0, s / 2); ctx.lineTo(s, s / 2); ctx.stroke();
+  ctx.beginPath(); ctx.arc(-s * 0.1, s / 2, s * 0.42, 0, Math.PI * 2); ctx.stroke();
+  ctx.beginPath(); ctx.arc(s * 1.1, s / 2, s * 0.42, 0, Math.PI * 2); ctx.stroke();
+};
+
+const drawSoccer: CanvasDraw = (ctx, s) => {
+  ctx.fillStyle = '#f4f4f4';
+  ctx.fillRect(0, 0, s, s);
+  ctx.fillStyle = '#111111';
+  const spots = [[0.5, 0.5], [0.15, 0.25], [0.85, 0.25], [0.15, 0.75], [0.85, 0.75], [0.5, 0.06], [0.5, 0.94]];
+  for (const [px, py] of spots) {
+    ctx.beginPath();
+    for (let k = 0; k < 5; k++) {
+      const a = (k / 5) * Math.PI * 2 - Math.PI / 2;
+      const x = px * s + Math.cos(a) * s * 0.09;
+      const y = py * s + Math.sin(a) * s * 0.09;
+      k === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+    ctx.fill();
+  }
+};
+
+const drawEight: CanvasDraw = (ctx, s) => {
+  ctx.fillStyle = '#0c0c10';
+  ctx.fillRect(0, 0, s, s);
+  ctx.fillStyle = '#f4f4f4';
+  ctx.beginPath(); ctx.arc(s / 2, s / 2, s * 0.2, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#0c0c10';
+  ctx.font = `bold ${Math.round(s * 0.24)}px Arial`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('8', s / 2, s / 2 + s * 0.01);
+};
+
+const drawTennis: CanvasDraw = (ctx, s) => {
+  ctx.fillStyle = '#c8e94a';
+  ctx.fillRect(0, 0, s, s);
+  ctx.strokeStyle = '#f8f8f8';
+  ctx.lineWidth = s * 0.05;
+  ctx.beginPath();
+  for (let x = 0; x <= s; x += 4) {
+    const y = s * 0.28 + Math.sin((x / s) * Math.PI * 2) * s * 0.12;
+    x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+  ctx.beginPath();
+  for (let x = 0; x <= s; x += 4) {
+    const y = s * 0.72 - Math.sin((x / s) * Math.PI * 2) * s * 0.12;
+    x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+};
+
+const drawBeach: CanvasDraw = (ctx, s) => {
+  const cols = ['#ff4d4d', '#ffd54d', '#4dff88', '#4dc3ff', '#b34dff', '#ffffff'];
+  const w = s / cols.length;
+  cols.forEach((c, k) => {
+    ctx.fillStyle = c;
+    ctx.fillRect(k * w, 0, w + 1, s);
+  });
+};
+
+const drawEarth: CanvasDraw = (ctx, s) => {
+  ctx.fillStyle = '#1565c0';
+  ctx.fillRect(0, 0, s, s);
+  ctx.fillStyle = '#2e9e4f';
+  const rng = mulberry32(7);
+  for (let k = 0; k < 14; k++) {
+    const bx = rng() * s, by = rng() * s, br = (0.06 + rng() * 0.1) * s;
+    ctx.beginPath();
+    ctx.ellipse(bx, by, br * (0.7 + rng()), br, rng() * 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.fillStyle = 'rgba(255,255,255,0.75)';
+  for (let k = 0; k < 8; k++) {
+    const bx = rng() * s, by = rng() * s;
+    ctx.beginPath();
+    ctx.ellipse(bx, by, s * 0.12, s * 0.03, rng() * 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+};
+
+const drawDice: CanvasDraw = (ctx, s) => {
+  ctx.fillStyle = '#f2f2f2';
+  ctx.fillRect(0, 0, s, s);
+  ctx.fillStyle = '#c62828';
+  const p = s * 0.26, r = s * 0.09;
+  for (const [px, py] of [[p, p], [s - p, p], [p, s - p], [s - p, s - p]]) {
+    ctx.beginPath(); ctx.arc(px, py, r, 0, Math.PI * 2); ctx.fill();
+  }
+};
+
+const drawDisco: CanvasDraw = (ctx, s) => {
+  const n = 10, w = s / n;
+  for (let ix = 0; ix < n; ix++) {
+    for (let iy = 0; iy < n; iy++) {
+      const v = 150 + ((ix * 7 + iy * 13) % 6) * 20;
+      ctx.fillStyle = `rgb(${v},${v},${v + 15})`;
+      ctx.fillRect(ix * w + 1, iy * w + 1, w - 2, w - 2);
+    }
+  }
+};
+
+const drawWatermelon: CanvasDraw = (ctx, s) => {
+  ctx.fillStyle = '#ff5252';
+  ctx.fillRect(0, 0, s, s);
+  ctx.fillStyle = '#2e7d32';
+  ctx.fillRect(0, s * 0.82, s, s * 0.18);
+  ctx.fillStyle = '#a5d6a7';
+  ctx.fillRect(0, s * 0.78, s, s * 0.05);
+  ctx.fillStyle = '#1b1b1b';
+  const rng = mulberry32(3);
+  for (let k = 0; k < 16; k++) {
+    ctx.beginPath();
+    ctx.ellipse(rng() * s, rng() * s * 0.72, s * 0.02, s * 0.04, rng() * 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+};
+
+const drawPixel: CanvasDraw = (ctx, s) => {
+  const cols = ['#ff2e55', '#19e6ff', '#ffd54d', '#7fff00', '#d500f9', '#ff8a3d'];
+  const n = 8, w = s / n;
+  const rng = mulberry32(11);
+  for (let ix = 0; ix < n; ix++) {
+    for (let iy = 0; iy < n; iy++) {
+      ctx.fillStyle = cols[Math.floor(rng() * cols.length)];
+      ctx.fillRect(ix * w, iy * w, w + 1, w + 1);
+    }
+  }
+};
+
+const drawCandy: CanvasDraw = (ctx, s) => {
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, s, s);
+  ctx.fillStyle = '#ff4d6d';
+  const bands = 6;
+  for (let k = 0; k < bands; k++) {
+    ctx.save();
+    ctx.translate(0, (k / bands) * s * 2 - s * 0.5);
+    ctx.rotate(-0.35);
+    ctx.fillRect(-s * 0.3, 0, s * 1.6, s * 0.09);
+    ctx.restore();
+  }
+};
+
+const drawEye: CanvasDraw = (ctx, s) => {
+  ctx.fillStyle = '#f6f2ec';
+  ctx.fillRect(0, 0, s, s);
+  ctx.strokeStyle = '#d05050';
+  ctx.lineWidth = s * 0.012;
+  const rng = mulberry32(5);
+  for (let k = 0; k < 9; k++) {
+    ctx.beginPath();
+    ctx.moveTo(rng() * s, rng() * s);
+    ctx.quadraticCurveTo(rng() * s, rng() * s, rng() * s, rng() * s);
+    ctx.stroke();
+  }
+  ctx.fillStyle = '#2e86c1';
+  ctx.beginPath(); ctx.arc(s / 2, s / 2, s * 0.2, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#0b0b0b';
+  ctx.beginPath(); ctx.arc(s / 2, s / 2, s * 0.1, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath(); ctx.arc(s * 0.56, s * 0.44, s * 0.035, 0, Math.PI * 2); ctx.fill();
+};
+
+const drawLava: CanvasDraw = (ctx, s) => {
+  ctx.fillStyle = '#1a0a04';
+  ctx.fillRect(0, 0, s, s);
+  const rng = mulberry32(13);
+  for (let k = 0; k < 26; k++) {
+    ctx.fillStyle = k % 2 ? '#ff6d00' : '#ff3d00';
+    ctx.beginPath();
+    ctx.ellipse(rng() * s, rng() * s, (0.03 + rng() * 0.09) * s, (0.02 + rng() * 0.05) * s, rng() * 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.fillStyle = '#ffd180';
+  for (let k = 0; k < 8; k++) {
+    ctx.beginPath();
+    ctx.arc(rng() * s, rng() * s, s * 0.015, 0, Math.PI * 2);
+    ctx.fill();
+  }
+};
+
+const drawGalaxy: CanvasDraw = (ctx, s) => {
+  const grad = ctx.createRadialGradient(s / 2, s / 2, s * 0.05, s / 2, s / 2, s * 0.7);
+  grad.addColorStop(0, '#7e57c2');
+  grad.addColorStop(0.5, '#1a0a3c');
+  grad.addColorStop(1, '#07031a');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, s, s);
+  const rng = mulberry32(17);
+  for (let k = 0; k < 90; k++) {
+    const v = 180 + Math.floor(rng() * 75);
+    ctx.fillStyle = `rgb(${v},${v},255)`;
+    ctx.fillRect(rng() * s, rng() * s, 2, 2);
+  }
+  ctx.strokeStyle = 'rgba(179,136,255,0.5)';
+  ctx.lineWidth = s * 0.05;
+  ctx.beginPath();
+  ctx.ellipse(s / 2, s / 2, s * 0.33, s * 0.12, 0.6, 0, Math.PI * 2);
+  ctx.stroke();
+};
+
+const drawGold: CanvasDraw = (ctx, s) => {
+  const grad = ctx.createLinearGradient(0, 0, s, s);
+  grad.addColorStop(0, '#ffe082');
+  grad.addColorStop(0.45, '#ffb300');
+  grad.addColorStop(0.55, '#ff8f00');
+  grad.addColorStop(1, '#ffd54d');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, s, s);
+  ctx.fillStyle = 'rgba(255,255,255,0.55)';
+  ctx.save();
+  ctx.rotate(-0.4);
+  ctx.fillRect(-s * 0.2, s * 0.25, s * 1.5, s * 0.06);
+  ctx.fillRect(-s * 0.2, s * 0.4, s * 1.5, s * 0.025);
+  ctx.restore();
+};
+
+// icon-only painters for skins built from geometry rather than a texture
+const iconNeon: CanvasDraw = (ctx, s) => {
+  ctx.fillStyle = '#062b33';
+  ctx.fillRect(0, 0, s, s);
+  ctx.strokeStyle = '#19e6ff';
+  ctx.lineWidth = s * 0.03;
+  for (let k = 0; k < 3; k++) {
+    ctx.beginPath();
+    ctx.ellipse(s / 2, s / 2, s * 0.38, s * 0.16, (k / 3) * Math.PI, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+};
+
+const iconDiamond: CanvasDraw = (ctx, s) => {
+  ctx.fillStyle = '#04222b';
+  ctx.fillRect(0, 0, s, s);
+  ctx.fillStyle = '#7ff0ff';
+  ctx.beginPath();
+  ctx.moveTo(s / 2, s * 0.08);
+  ctx.lineTo(s * 0.9, s / 2);
+  ctx.lineTo(s / 2, s * 0.92);
+  ctx.lineTo(s * 0.1, s / 2);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = s * 0.02;
+  ctx.stroke();
+};
+
+const iconBubble: CanvasDraw = (ctx, s) => {
+  ctx.fillStyle = '#0a1a26';
+  ctx.fillRect(0, 0, s, s);
+  ctx.fillStyle = 'rgba(191,232,255,0.35)';
+  ctx.beginPath(); ctx.arc(s / 2, s / 2, s * 0.4, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = 'rgba(191,232,255,0.8)';
+  ctx.lineWidth = s * 0.02;
+  ctx.stroke();
+  ctx.fillStyle = 'rgba(255,255,255,0.8)';
+  ctx.beginPath(); ctx.ellipse(s * 0.38, s * 0.36, s * 0.09, s * 0.05, -0.6, 0, Math.PI * 2); ctx.fill();
+};
+
+const iconHolo: CanvasDraw = (ctx, s) => {
+  ctx.fillStyle = '#03141a';
+  ctx.fillRect(0, 0, s, s);
+  ctx.strokeStyle = '#19e6ff';
+  ctx.lineWidth = s * 0.022;
+  for (let k = 1; k <= 4; k++) {
+    ctx.globalAlpha = 1 - k * 0.18;
+    ctx.beginPath();
+    ctx.arc(s / 2, s / 2, s * 0.1 * k, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+};
+
+const iconBlackhole: CanvasDraw = (ctx, s) => {
+  ctx.fillStyle = '#0d0d12';
+  ctx.fillRect(0, 0, s, s);
+  ctx.strokeStyle = '#ff9100';
+  ctx.lineWidth = s * 0.05;
+  ctx.beginPath();
+  ctx.ellipse(s / 2, s / 2, s * 0.36, s * 0.14, -0.5, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.fillStyle = '#000000';
+  ctx.beginPath(); ctx.arc(s / 2, s / 2, s * 0.2, 0, Math.PI * 2); ctx.fill();
+};
+
 const SKINS: Skin[] = [
   {
-    id: 'neon',
-    name: 'NEON CORE',
-    lockText: '',
+    id: 'neon', name: 'NEON CORE', lockText: '', price: 0, icon: iconNeon,
     unlocked: () => true,
     build: () => {
       const g = new THREE.Group();
@@ -502,153 +821,20 @@ const SKINS: Skin[] = [
       return g;
     },
   },
+  { id: 'basket', name: 'BASKETBALL', lockText: 'BEST 150m', price: 0, icon: drawBasket, unlocked: () => state.best >= 150, build: () => texturedBall(drawBasket) },
+  { id: 'soccer', name: 'SOCCER BALL', lockText: 'BEST 300m', price: 0, icon: drawSoccer, unlocked: () => state.best >= 300, build: () => texturedBall(drawSoccer) },
+  { id: 'eight', name: '8-BALL', lockText: 'BEST 500m', price: 0, icon: drawEight, unlocked: () => state.best >= 500, build: () => texturedBall(drawEight) },
+  { id: 'tennis', name: 'TENNIS', lockText: 'TOTAL 2 KM', price: 0, icon: drawTennis, unlocked: () => state.total >= 2000, build: () => texturedBall(drawTennis) },
+  { id: 'beach', name: 'BEACH BALL', lockText: 'TOTAL 5 KM', price: 0, icon: drawBeach, unlocked: () => state.total >= 5000, build: () => texturedBall(drawBeach) },
+  { id: 'earth', name: 'PLANET EARTH', lockText: 'TOTAL 10 KM', price: 0, icon: drawEarth, unlocked: () => state.total >= 10000, build: () => texturedBall(drawEarth) },
   {
-    id: 'basket',
-    name: 'BASKETBALL',
-    lockText: 'BEST 150m',
-    unlocked: () => state.best >= 150,
-    build: () =>
-      texturedBall((ctx, s) => {
-        ctx.fillStyle = '#e65f1e';
-        ctx.fillRect(0, 0, s, s);
-        ctx.strokeStyle = '#241205';
-        ctx.lineWidth = s * 0.035;
-        ctx.beginPath(); ctx.moveTo(s / 2, 0); ctx.lineTo(s / 2, s); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(0, s / 2); ctx.lineTo(s, s / 2); ctx.stroke();
-        ctx.beginPath(); ctx.arc(-s * 0.1, s / 2, s * 0.42, 0, Math.PI * 2); ctx.stroke();
-        ctx.beginPath(); ctx.arc(s * 1.1, s / 2, s * 0.42, 0, Math.PI * 2); ctx.stroke();
-      }),
-  },
-  {
-    id: 'soccer',
-    name: 'SOCCER BALL',
-    lockText: 'BEST 300m',
-    unlocked: () => state.best >= 300,
-    build: () =>
-      texturedBall((ctx, s) => {
-        ctx.fillStyle = '#f4f4f4';
-        ctx.fillRect(0, 0, s, s);
-        ctx.fillStyle = '#111111';
-        const spots = [[0.5, 0.5], [0.15, 0.25], [0.85, 0.25], [0.15, 0.75], [0.85, 0.75], [0.5, 0.06], [0.5, 0.94]];
-        for (const [px, py] of spots) {
-          ctx.beginPath();
-          for (let k = 0; k < 5; k++) {
-            const a = (k / 5) * Math.PI * 2 - Math.PI / 2;
-            const x = px * s + Math.cos(a) * s * 0.09;
-            const y = py * s + Math.sin(a) * s * 0.09;
-            k === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-          }
-          ctx.closePath();
-          ctx.fill();
-        }
-      }),
-  },
-  {
-    id: 'eight',
-    name: '8-BALL',
-    lockText: 'BEST 500m',
-    unlocked: () => state.best >= 500,
-    build: () =>
-      texturedBall((ctx, s) => {
-        ctx.fillStyle = '#0c0c10';
-        ctx.fillRect(0, 0, s, s);
-        ctx.fillStyle = '#f4f4f4';
-        ctx.beginPath(); ctx.arc(s / 2, s / 2, s * 0.2, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = '#0c0c10';
-        ctx.font = `bold ${Math.round(s * 0.24)}px Arial`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText('8', s / 2, s / 2 + s * 0.01);
-      }),
-  },
-  {
-    id: 'tennis',
-    name: 'TENNIS',
-    lockText: 'TOTAL 2 KM',
-    unlocked: () => state.total >= 2000,
-    build: () =>
-      texturedBall((ctx, s) => {
-        ctx.fillStyle = '#c8e94a';
-        ctx.fillRect(0, 0, s, s);
-        ctx.strokeStyle = '#f8f8f8';
-        ctx.lineWidth = s * 0.05;
-        ctx.beginPath();
-        for (let x = 0; x <= s; x += 4) {
-          const y = s * 0.28 + Math.sin((x / s) * Math.PI * 2) * s * 0.12;
-          x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-        }
-        ctx.stroke();
-        ctx.beginPath();
-        for (let x = 0; x <= s; x += 4) {
-          const y = s * 0.72 - Math.sin((x / s) * Math.PI * 2) * s * 0.12;
-          x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-        }
-        ctx.stroke();
-      }),
-  },
-  {
-    id: 'beach',
-    name: 'BEACH BALL',
-    lockText: 'TOTAL 5 KM',
-    unlocked: () => state.total >= 5000,
-    build: () =>
-      texturedBall((ctx, s) => {
-        const cols = ['#ff4d4d', '#ffd54d', '#4dff88', '#4dc3ff', '#b34dff', '#ffffff'];
-        const w = s / cols.length;
-        cols.forEach((c, k) => {
-          ctx.fillStyle = c;
-          ctx.fillRect(k * w, 0, w + 1, s);
-        });
-      }),
-  },
-  {
-    id: 'earth',
-    name: 'PLANET EARTH',
-    lockText: 'TOTAL 10 KM',
-    unlocked: () => state.total >= 10000,
-    build: () =>
-      texturedBall((ctx, s) => {
-        ctx.fillStyle = '#1565c0';
-        ctx.fillRect(0, 0, s, s);
-        ctx.fillStyle = '#2e9e4f';
-        const rng = mulberry32(7);
-        for (let k = 0; k < 14; k++) {
-          const bx = rng() * s, by = rng() * s, br = (0.06 + rng() * 0.1) * s;
-          ctx.beginPath();
-          ctx.ellipse(bx, by, br * (0.7 + rng()), br, rng() * 3, 0, Math.PI * 2);
-          ctx.fill();
-        }
-        ctx.fillStyle = 'rgba(255,255,255,0.75)';
-        for (let k = 0; k < 8; k++) {
-          const bx = rng() * s, by = rng() * s;
-          ctx.beginPath();
-          ctx.ellipse(bx, by, s * 0.12, s * 0.03, rng() * 3, 0, Math.PI * 2);
-          ctx.fill();
-        }
-      }),
-  },
-  {
-    id: 'dice',
-    name: 'LUCKY DICE',
-    lockText: '15 RUNS',
+    id: 'dice', name: 'LUCKY DICE', lockText: '15 RUNS', price: 0, icon: drawDice,
     unlocked: () => state.runs >= 15,
-    build: () => {
-      const tex = makeTexture((ctx, s) => {
-        ctx.fillStyle = '#f2f2f2';
-        ctx.fillRect(0, 0, s, s);
-        ctx.fillStyle = '#c62828';
-        const p = s * 0.26, r = s * 0.09;
-        for (const [px, py] of [[p, p], [s - p, p], [p, s - p], [s - p, s - p]]) {
-          ctx.beginPath(); ctx.arc(px, py, r, 0, Math.PI * 2); ctx.fill();
-        }
-      });
-      return new THREE.Mesh(new THREE.BoxGeometry(BALL_R * 1.5, BALL_R * 1.5, BALL_R * 1.5), new THREE.MeshBasicMaterial({ map: tex }));
-    },
+    build: () =>
+      new THREE.Mesh(new THREE.BoxGeometry(BALL_R * 1.5, BALL_R * 1.5, BALL_R * 1.5), new THREE.MeshBasicMaterial({ map: makeTexture(drawDice) })),
   },
   {
-    id: 'diamond',
-    name: 'DIAMOND',
-    lockText: 'BEST 800m',
+    id: 'diamond', name: 'DIAMOND', lockText: 'BEST 800m', price: 0, icon: iconDiamond,
     unlocked: () => state.best >= 800,
     build: () => {
       const g = new THREE.Group();
@@ -657,22 +843,46 @@ const SKINS: Skin[] = [
       return g;
     },
   },
+  { id: 'disco', name: 'DISCO BALL', lockText: '30 RUNS', price: 0, icon: drawDisco, unlocked: () => state.runs >= 30, build: () => texturedBall(drawDisco) },
+  // ---------- shop skins (bought with gems)
+  { id: 'melon', name: 'WATERMELON', lockText: '', price: 100, icon: drawWatermelon, unlocked: () => ownedSkins.has('melon'), build: () => texturedBall(drawWatermelon) },
+  { id: 'pixel', name: 'PIXEL POP', lockText: '', price: 150, icon: drawPixel, unlocked: () => ownedSkins.has('pixel'), build: () => texturedBall(drawPixel) },
+  { id: 'candy', name: 'CANDY SWIRL', lockText: '', price: 200, icon: drawCandy, unlocked: () => ownedSkins.has('candy'), build: () => texturedBall(drawCandy) },
+  { id: 'eye', name: 'THE EYE', lockText: '', price: 250, icon: drawEye, unlocked: () => ownedSkins.has('eye'), build: () => texturedBall(drawEye) },
+  { id: 'lava', name: 'LAVA CORE', lockText: '', price: 300, icon: drawLava, unlocked: () => ownedSkins.has('lava'), build: () => texturedBall(drawLava) },
+  { id: 'galaxy', name: 'GALAXY', lockText: '', price: 400, icon: drawGalaxy, unlocked: () => ownedSkins.has('galaxy'), build: () => texturedBall(drawGalaxy) },
+  { id: 'gold', name: 'SOLID GOLD', lockText: '', price: 500, icon: drawGold, unlocked: () => ownedSkins.has('gold'), build: () => texturedBall(drawGold) },
   {
-    id: 'disco',
-    name: 'DISCO BALL',
-    lockText: '30 RUNS',
-    unlocked: () => state.runs >= 30,
-    build: () =>
-      texturedBall((ctx, s) => {
-        const n = 10, w = s / n;
-        for (let ix = 0; ix < n; ix++) {
-          for (let iy = 0; iy < n; iy++) {
-            const v = 150 + ((ix * 7 + iy * 13) % 6) * 20;
-            ctx.fillStyle = `rgb(${v},${v},${v + 15})`;
-            ctx.fillRect(ix * w + 1, iy * w + 1, w - 2, w - 2);
-          }
-        }
-      }),
+    id: 'bubble', name: 'BUBBLE', lockText: '', price: 600, icon: iconBubble,
+    unlocked: () => ownedSkins.has('bubble'),
+    build: () => {
+      const g = new THREE.Group();
+      g.add(new THREE.Mesh(sphereGeo, new THREE.MeshBasicMaterial({ color: '#bfe8ff', transparent: true, opacity: 0.3 })));
+      g.add(new THREE.Mesh(new THREE.SphereGeometry(BALL_R, 14, 14), new THREE.MeshBasicMaterial({ color: '#dff4ff', wireframe: true, transparent: true, opacity: 0.35 })));
+      return g;
+    },
+  },
+  {
+    id: 'holo', name: 'HOLOGRAM', lockText: '', price: 800, icon: iconHolo,
+    unlocked: () => ownedSkins.has('holo'),
+    build: () => {
+      const g = new THREE.Group();
+      g.add(new THREE.Mesh(new THREE.SphereGeometry(BALL_R * 0.7, 20, 20), new THREE.MeshBasicMaterial({ color: '#19e6ff', transparent: true, opacity: 0.5 })));
+      g.add(new THREE.Mesh(new THREE.IcosahedronGeometry(BALL_R * 1.05, 1), new THREE.MeshBasicMaterial({ color: '#7ff0ff', wireframe: true, transparent: true, opacity: 0.7 })));
+      return g;
+    },
+  },
+  {
+    id: 'hole', name: 'BLACK HOLE', lockText: '', price: 1000, icon: iconBlackhole,
+    unlocked: () => ownedSkins.has('hole'),
+    build: () => {
+      const g = new THREE.Group();
+      g.add(new THREE.Mesh(new THREE.SphereGeometry(BALL_R * 0.85, 24, 24), new THREE.MeshBasicMaterial({ color: '#000000' })));
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(BALL_R * 1.15, 0.09, 8, 40), new THREE.MeshBasicMaterial({ color: '#ff9100' }));
+      ring.rotation.x = Math.PI / 2.6;
+      g.add(ring);
+      return g;
+    },
   },
 ];
 
@@ -998,6 +1208,7 @@ const speedEl = $('speed');
 const speedFillEl = $('speedfill');
 const gravChipEl = $('gravChip');
 const gravLabelEl = $('gravLabel');
+const gemCountEl = $('gemCount');
 const menuEl = $('menu');
 const pauseEl = $('pause');
 const overEl = $('over');
@@ -1098,7 +1309,11 @@ function renderSkinPicker() {
     currentSkinObj = sk.build();
     ballSpin.add(currentSkinObj);
   }
-  skinLockEl.textContent = open ? 'SELECTED' : `LOCKED · ${sk.lockText}`;
+  skinLockEl.textContent = open
+    ? 'SELECTED'
+    : sk.price > 0
+      ? `${sk.price} \u{1F48E} · BUY IN SHOP`
+      : `LOCKED · ${sk.lockText}`;
 }
 $('skinPrev').addEventListener('click', () => {
   browseSkin = (browseSkin - 1 + SKINS.length) % SKINS.length;
@@ -1109,6 +1324,117 @@ $('skinNext').addEventListener('click', () => {
   renderSkinPicker();
 });
 renderSkinPicker();
+
+// ---------------------------------------------------------------- shop
+const shopEl = $('shop');
+const shopGridEl = $('shopGrid');
+const walletShopEl = $('walletShop');
+const walletMenuEl = $('walletMenu');
+const tabBallsEl = $('tabBalls');
+const tabMapsEl = $('tabMaps');
+let shopTab: 'balls' | 'maps' = 'balls';
+
+function updateWalletUI() {
+  walletShopEl.textContent = `${gemWallet}`;
+  walletMenuEl.textContent = `${gemWallet}`;
+  gemCountEl.textContent = `${gemWallet}`;
+}
+
+function iconDataUrl(draw: CanvasDraw, size = 96): string {
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  draw(c.getContext('2d')!, size);
+  return c.toDataURL();
+}
+
+function rejectCard(card: HTMLElement) {
+  card.classList.remove('shake-card');
+  void card.offsetWidth;
+  card.classList.add('shake-card');
+}
+
+function renderShop() {
+  updateWalletUI();
+  shopGridEl.innerHTML = '';
+  if (shopTab === 'balls') {
+    SKINS.forEach((sk, idx) => {
+      const card = document.createElement('div');
+      card.className = 'card';
+      const open = sk.unlocked();
+      const status = open
+        ? idx === activeSkin
+          ? '<span class="tag selected">SELECTED</span>'
+          : '<span class="tag owned">OWNED</span>'
+        : sk.price > 0
+          ? `<button class="buy">${sk.price} \u{1F48E}</button>`
+          : `<span class="tag locked">${sk.lockText}</span>`;
+      card.innerHTML = `<img class="thumb ball" src="${iconDataUrl(sk.icon)}" alt=""><div class="card-name">${sk.name}</div>${status}`;
+      card.addEventListener('click', () => {
+        if (sk.unlocked()) {
+          browseSkin = idx;
+          applySkin(idx);
+          renderShop();
+        } else if (sk.price > 0 && gemWallet >= sk.price) {
+          gemWallet -= sk.price;
+          ownedSkins.add(sk.id);
+          saveWallet();
+          browseSkin = idx;
+          applySkin(idx);
+          pickupSound();
+          renderShop();
+        } else {
+          rejectCard(card);
+        }
+      });
+      shopGridEl.appendChild(card);
+    });
+  } else {
+    ZONES.forEach((z, idx) => {
+      const card = document.createElement('div');
+      card.className = 'card';
+      const owned = z.price === 0 || ownedMaps.has(idx);
+      const status = owned
+        ? '<span class="tag owned">IN ROTATION</span>'
+        : `<button class="buy">${z.price} \u{1F48E}</button>`;
+      card.innerHTML = `<div class="thumb map" style="background:${z.floor}"><i style="background:${z.rail}"></i><i style="background:${z.stripe}"></i><i style="background:${z.star}"></i></div><div class="card-name">${z.name}</div>${status}`;
+      card.addEventListener('click', () => {
+        if (owned) return;
+        if (gemWallet >= z.price) {
+          gemWallet -= z.price;
+          ownedMaps.add(idx);
+          saveWallet();
+          pickupSound();
+          renderShop();
+        } else {
+          rejectCard(card);
+        }
+      });
+      shopGridEl.appendChild(card);
+    });
+  }
+}
+
+function setShopTab(tab: 'balls' | 'maps') {
+  shopTab = tab;
+  tabBallsEl.classList.toggle('active', tab === 'balls');
+  tabMapsEl.classList.toggle('active', tab === 'maps');
+  renderShop();
+}
+tabBallsEl.addEventListener('click', () => setShopTab('balls'));
+tabMapsEl.addEventListener('click', () => setShopTab('maps'));
+
+$('shopBtn').addEventListener('click', () => {
+  menuEl.classList.add('hidden');
+  shopEl.classList.remove('hidden');
+  setShopTab('balls');
+});
+$('shopClose').addEventListener('click', () => {
+  shopEl.classList.add('hidden');
+  showBest();
+  renderSkinPicker();
+  menuEl.classList.remove('hidden');
+});
+updateWalletUI();
 
 // ---------------------------------------------------------------- input
 const keys: Record<string, boolean> = {};
@@ -1456,8 +1782,8 @@ function step(dt: number) {
   if (zi !== zoneIdx) {
     zoneIdx = zi;
     setZoneTargets(zi);
-    const zn = ZONES[zi % ZONES.length];
-    toast(`ZONE ${zi + 1} · ${zn.name}`, 'gold');
+    const rot = zoneRotation();
+    toast(`ZONE ${zi + 1} · ${rot[zi % rot.length].name}`, 'gold');
   }
 
   // milestone + new-best toasts
@@ -1554,6 +1880,9 @@ function step(dt: number) {
             rec.gems = rec.gems.filter((e) => e.gm !== gm);
           }
           state.score += GEM_SCORE * (powers.x2 > 0 ? 2 : 1);
+          gemWallet += 1;
+          saveWallet();
+          gemCountEl.textContent = `${gemWallet}`;
           gemSound();
           burst(gx, itemY(gm.side, gm.z), gm.z, '#8affd0', 6, 5);
         }
@@ -1714,5 +2043,10 @@ requestAnimationFrame(frame);
   flipGravity,
   applyPower,
   applySkin,
+  giveGems: (n: number) => {
+    gemWallet += n;
+    saveWallet();
+    updateWalletUI();
+  },
   tick, // manual stepping for automated tests (works even when RAF is throttled)
 };

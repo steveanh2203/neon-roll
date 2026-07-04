@@ -14,9 +14,12 @@
 
       <div id="hud" class="hidden">
         <div id="hud-top">
-          <div id="gravChip">
-            <span id="gravArrow">&#9650;</span>
-            <span id="gravLabel">TOP</span>
+          <div id="hud-left">
+            <div id="gravChip">
+              <span id="gravArrow">&#9650;</span>
+              <span id="gravLabel">TOP</span>
+            </div>
+            <div id="gemChip">&#128142; <span id="gemCount">0</span></div>
           </div>
           <div id="hud-center">
             <div id="score">0</div>
@@ -58,8 +61,22 @@
           <button id="skinNext" class="iconbtn">&#9654;</button>
         </div>
         <button id="playBtn" class="btn">PLAY</button>
+        <button id="shopBtn" class="btn btn-secondary">&#128717; SHOP &middot; <span id="walletMenu">0</span> &#128142;</button>
         <p id="bestMenu" class="best"></p>
         <p id="statsMenu" class="stats-line"></p>
+      </div>
+
+      <div id="shop" class="overlay shop hidden">
+        <div class="shop-head">
+          <h3>SHOP</h3>
+          <div class="wallet">&#128142; <span id="walletShop">0</span></div>
+          <button id="shopClose" class="iconbtn">&#10005;</button>
+        </div>
+        <div class="shop-tabs">
+          <button id="tabBalls" class="tab active">BALLS</button>
+          <button id="tabMaps" class="tab">MAPS</button>
+        </div>
+        <div id="shopGrid" class="shop-grid"></div>
       </div>
 
       <div id="pause" class="overlay hidden">
