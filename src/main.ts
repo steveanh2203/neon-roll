@@ -1,4 +1,7 @@
 import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import './style.css';
 
 // ---------------------------------------------------------------- constants
@@ -46,6 +49,9 @@ let audioCtx: AudioContext | null = null;
 let humOsc: OscillatorNode | null = null;
 let humGain: GainNode | null = null;
 
+let musicGain: GainNode | null = null;
+let noiseBuf: AudioBuffer | null = null;
+
 function initAudio() {
   if (audioCtx) return;
   try {
@@ -59,6 +65,14 @@ function initAudio() {
     humGain.gain.value = 0;
     humOsc.connect(filter).connect(humGain).connect(audioCtx.destination);
     humOsc.start();
+
+    musicGain = audioCtx.createGain();
+    musicGain.gain.value = 0.1;
+    musicGain.connect(audioCtx.destination);
+
+    noiseBuf = audioCtx.createBuffer(1, audioCtx.sampleRate * 0.06, audioCtx.sampleRate);
+    const data = noiseBuf.getChannelData(0);
+    for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / data.length);
   } catch {
     audioCtx = null;
   }
@@ -67,7 +81,112 @@ function initAudio() {
 function setHum(speed: number, on: boolean) {
   if (!audioCtx || !humOsc || !humGain) return;
   humOsc.frequency.value = 50 + speed * 2.2;
-  humGain.gain.value = on && !muted ? 0.025 : 0;
+  humGain.gain.value = on && !muted ? 0.013 : 0;
+}
+
+// ---------- procedural synthwave sequencer (Am / Am / F / G, 104 BPM)
+const BPM = 104;
+const STEP16 = 60 / BPM / 4;
+const BEAT = 60 / BPM;
+const BASS_LINE = [55, 55, 43.65, 49]; // A1 A1 F1 G1
+const ARP_CHORDS = [
+  [220, 261.63, 329.63, 440], // Am
+  [220, 261.63, 329.63, 440],
+  [174.61, 220, 261.63, 349.23], // F
+  [196, 246.94, 293.66, 392], // G
+];
+const ARP_PATTERN = [0, 2, 1, 3, 2, 0, 3, 1];
+
+let musicOn = false;
+let musicStep = 0;
+let musicNextTime = 0;
+let musicStartTime = 0;
+
+function mnote(freq: number, t: number, dur: number, vol: number, type: OscillatorType, filterHz = 0) {
+  if (!audioCtx || !musicGain) return;
+  const o = audioCtx.createOscillator();
+  o.type = type;
+  o.frequency.setValueAtTime(freq, t);
+  const g = audioCtx.createGain();
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(vol, t + 0.008);
+  g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  if (filterHz > 0) {
+    const f = audioCtx.createBiquadFilter();
+    f.type = 'lowpass';
+    f.frequency.value = filterHz;
+    o.connect(f).connect(g).connect(musicGain);
+  } else {
+    o.connect(g).connect(musicGain);
+  }
+  o.start(t);
+  o.stop(t + dur + 0.05);
+}
+
+function mkick(t: number) {
+  if (!audioCtx || !musicGain) return;
+  const o = audioCtx.createOscillator();
+  o.type = 'sine';
+  o.frequency.setValueAtTime(150, t);
+  o.frequency.exponentialRampToValueAtTime(46, t + 0.11);
+  const g = audioCtx.createGain();
+  g.gain.setValueAtTime(0.55, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + 0.14);
+  o.connect(g).connect(musicGain);
+  o.start(t);
+  o.stop(t + 0.16);
+}
+
+function mhat(t: number) {
+  if (!audioCtx || !musicGain || !noiseBuf) return;
+  const src = audioCtx.createBufferSource();
+  src.buffer = noiseBuf;
+  const f = audioCtx.createBiquadFilter();
+  f.type = 'highpass';
+  f.frequency.value = 6200;
+  const g = audioCtx.createGain();
+  g.gain.value = 0.16;
+  src.connect(f).connect(g).connect(musicGain);
+  src.start(t);
+}
+
+function playStep(step: number, t: number) {
+  const bar = Math.floor(step / 16) % 4;
+  if (step % 4 === 0) mkick(t);
+  if (step % 4 === 2) mhat(t);
+  if (step % 2 === 0) mnote(BASS_LINE[bar], t, 0.19, 0.3, 'sawtooth', 260);
+  const arp = ARP_CHORDS[bar][ARP_PATTERN[step % 8] % 4];
+  mnote(arp * (step % 16 >= 8 ? 2 : 1), t, 0.1, 0.09, 'triangle');
+}
+
+function startMusic() {
+  if (!audioCtx) return;
+  musicOn = true;
+  musicStep = 0;
+  musicNextTime = audioCtx.currentTime + 0.05;
+  musicStartTime = musicNextTime;
+}
+
+function stopMusic() {
+  musicOn = false;
+}
+
+function musicTick() {
+  if (!musicOn || !audioCtx || muted) return;
+  const ahead = audioCtx.currentTime + 0.2;
+  while (musicNextTime < ahead) {
+    playStep(musicStep, musicNextTime);
+    musicStep = (musicStep + 1) % 64;
+    musicNextTime += STEP16;
+  }
+}
+
+// 0..1 spike right on each beat — drives the beat-synced visuals
+function beatPulse(): number {
+  if (!musicOn || !audioCtx || muted) return 0;
+  const ph = ((audioCtx.currentTime - musicStartTime) % BEAT) / BEAT;
+  if (ph < 0) return 0; // context still suspended (no user gesture yet)
+  return Math.pow(Math.max(0, 1 - ph * 2.4), 2);
 }
 
 function blip(freqFrom: number, freqTo: number, dur: number, type: OscillatorType = 'sine', gain = 0.12) {
@@ -144,10 +263,19 @@ scene.fog = new THREE.Fog(new THREE.Color('#0a0618'), 60, 330);
 
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 800);
 
+// bloom post-processing (toggleable — heavy on weak mobile GPUs)
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+composer.addPass(new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.7, 0.5, 0.28));
+
+let fxOn =
+  (localStorage.getItem('neonroll_fx') ?? (window.matchMedia('(pointer: coarse)').matches ? '0' : '1')) === '1';
+
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
+  composer.setSize(window.innerWidth, window.innerHeight);
 });
 
 // stars
@@ -188,6 +316,16 @@ const ZONES: Zone[] = [
 
 let zoneIdx = 0;
 const zoneTarget = {
+  floor: new THREE.Color(ZONES[0].floor),
+  rail: new THREE.Color(ZONES[0].rail),
+  stripe: new THREE.Color(ZONES[0].stripe),
+  ob: new THREE.Color(ZONES[0].ob),
+  fog: new THREE.Color(ZONES[0].fog),
+  star: new THREE.Color(ZONES[0].star),
+};
+// smoothly-lerped base colors — materials are derived from these each frame
+// so the beat pulse can brighten rails/stripes without fighting the lerp
+const zoneBase = {
   floor: new THREE.Color(ZONES[0].floor),
   rail: new THREE.Color(ZONES[0].rail),
   stripe: new THREE.Color(ZONES[0].stripe),
@@ -275,6 +413,56 @@ function tickParticles(dt: number) {
     p.mesh.rotation.x += dt * 6;
     p.mesh.rotation.y += dt * 4;
   }
+}
+
+// ---------------------------------------------------------------- ball trail (additive ribbon)
+const TRAIL_N = 30;
+const trailPts: { x: number; y: number; z: number }[] = [];
+const trailGeo = new THREE.BufferGeometry();
+{
+  trailGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(TRAIL_N * 2 * 3), 3));
+  trailGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(TRAIL_N * 2 * 3), 3));
+  const idx: number[] = [];
+  for (let i = 0; i < TRAIL_N - 1; i++) {
+    const a = i * 2;
+    idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
+  }
+  trailGeo.setIndex(idx);
+}
+const trailMesh = new THREE.Mesh(
+  trailGeo,
+  new THREE.MeshBasicMaterial({
+    vertexColors: true,
+    transparent: true,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  })
+);
+trailMesh.frustumCulled = false;
+scene.add(trailMesh);
+
+function updateTrail(tint: THREE.Color) {
+  if (trailPts.length < 2) {
+    trailMesh.visible = false;
+    return;
+  }
+  trailMesh.visible = true;
+  const pos = trailGeo.getAttribute('position') as THREE.BufferAttribute;
+  const col = trailGeo.getAttribute('color') as THREE.BufferAttribute;
+  const n = trailPts.length;
+  for (let i = 0; i < TRAIL_N; i++) {
+    const p = trailPts[Math.min(i, n - 1)];
+    const k = Math.min(i, n - 1) / (n - 1); // 0 = oldest, 1 = newest
+    const w = 0.12 + 0.5 * k;
+    pos.setXYZ(i * 2, p.x - w, p.y, p.z);
+    pos.setXYZ(i * 2 + 1, p.x + w, p.y, p.z);
+    const b = k * k * 0.85; // additive: dark = invisible
+    col.setXYZ(i * 2, tint.r * b, tint.g * b, tint.b * b);
+    col.setXYZ(i * 2 + 1, tint.r * b, tint.g * b, tint.b * b);
+  }
+  pos.needsUpdate = true;
+  col.needsUpdate = true;
 }
 
 function makeTexture(draw: (ctx: CanvasRenderingContext2D, s: number) => void, size = 256): THREE.CanvasTexture {
@@ -884,6 +1072,14 @@ function toggleSound() {
 }
 soundBtns.forEach((b) => b.addEventListener('click', toggleSound));
 
+const fxBtn = $('fxBtn');
+fxBtn.classList.toggle('muted', !fxOn);
+fxBtn.addEventListener('click', () => {
+  fxOn = !fxOn;
+  localStorage.setItem('neonroll_fx', fxOn ? '1' : '0');
+  fxBtn.classList.toggle('muted', !fxOn);
+});
+
 // ---------------------------------------------------------------- skin picker
 let browseSkin = Math.max(0, SKINS.findIndex((sk) => sk.id === localStorage.getItem('neonroll_skin')));
 if (!SKINS[browseSkin].unlocked()) browseSkin = 0;
@@ -1027,6 +1223,8 @@ function startRun() {
   overEl.classList.add('hidden');
   pauseEl.classList.add('hidden');
   hudEl.classList.remove('hidden');
+  trailPts.length = 0;
+  startMusic();
   showGo();
   sdkStart();
 }
@@ -1035,6 +1233,7 @@ function pauseRun() {
   if (state.phase !== 'run') return;
   state.phase = 'pause';
   setHum(0, false);
+  stopMusic();
   sdkStop();
   pauseEl.classList.remove('hidden');
 }
@@ -1043,12 +1242,14 @@ function resumeRun() {
   if (state.phase !== 'pause') return;
   state.phase = 'run';
   pauseEl.classList.add('hidden');
+  startMusic();
   sdkStart();
 }
 
 function goToMenu() {
   state.phase = 'menu';
   setHum(0, false);
+  stopMusic();
   sdkStop();
   ballSpin.visible = true;
   pauseEl.classList.add('hidden');
@@ -1077,6 +1278,7 @@ function die() {
   state.phase = 'over';
   crashSound();
   setHum(0, false);
+  stopMusic();
   sdkStop();
   flashVignette('flash');
   appEl.classList.remove('shake');
@@ -1140,6 +1342,8 @@ function reviveRun() {
   state.phase = 'run';
   overEl.classList.add('hidden');
   hudEl.classList.remove('hidden');
+  trailPts.length = 0;
+  startMusic();
   showGo();
   sdkStart();
 }
@@ -1158,6 +1362,7 @@ function setBallOpacity(op: number) {
 
 function applyPower(kind: PowerKind) {
   pickupSound();
+  fovKick = 7;
   if (kind === 'shield') {
     powers.shield = 1;
     shieldMesh.visible = true;
@@ -1182,6 +1387,7 @@ function breakShield(o: Ob) {
   o.dead = true;
   powers.shield = 0;
   powers.invuln = 0.6;
+  hitstop = 0.12;
   shieldMesh.visible = false;
   shieldBreakSound();
   flashVignette('flash-cyan');
@@ -1375,6 +1581,8 @@ function step(dt: number) {
 const camPos = new THREE.Vector3();
 const camLook = new THREE.Vector3();
 let last = performance.now();
+let fovKick = 0;
+let hitstop = 0;
 
 function frame(now: number) {
   requestAnimationFrame(frame);
@@ -1383,7 +1591,14 @@ function frame(now: number) {
   tick(dt);
 }
 
-function tick(dt: number) {
+function tick(rawDt: number) {
+  let dt = rawDt;
+  if (hitstop > 0) {
+    hitstop -= rawDt;
+    dt = rawDt * 0.12; // brief slow-mo (shield break)
+  }
+  musicTick();
+
   if (state.phase === 'run') {
     step(dt);
     setHum(state.speed, true);
@@ -1403,15 +1618,31 @@ function tick(dt: number) {
 
   updateTrack(state.z);
 
-  // zone color lerp
+  // zone color lerp + beat-synced pulse on the neon parts
   const lerpK = Math.min(1, dt * 2.2);
-  floorMat.color.lerp(zoneTarget.floor, lerpK);
-  railMat.color.lerp(zoneTarget.rail, lerpK);
-  stripeMat.color.lerp(zoneTarget.stripe, lerpK);
-  obMat.color.lerp(zoneTarget.ob, lerpK);
-  starsMat.color.lerp(zoneTarget.star, lerpK);
-  (scene.fog as THREE.Fog).color.lerp(zoneTarget.fog, lerpK);
-  (scene.background as THREE.Color).lerp(zoneTarget.fog, lerpK);
+  zoneBase.floor.lerp(zoneTarget.floor, lerpK);
+  zoneBase.rail.lerp(zoneTarget.rail, lerpK);
+  zoneBase.stripe.lerp(zoneTarget.stripe, lerpK);
+  zoneBase.ob.lerp(zoneTarget.ob, lerpK);
+  zoneBase.star.lerp(zoneTarget.star, lerpK);
+  zoneBase.fog.lerp(zoneTarget.fog, lerpK);
+
+  const pulse = state.phase === 'run' ? beatPulse() : 0;
+  floorMat.color.copy(zoneBase.floor);
+  obMat.color.copy(zoneBase.ob);
+  starsMat.color.copy(zoneBase.star);
+  railMat.color.copy(zoneBase.rail).multiplyScalar(1 + pulse * 0.5);
+  stripeMat.color.copy(zoneBase.stripe).multiplyScalar(1 + pulse * 0.5);
+  (scene.fog as THREE.Fog).color.copy(zoneBase.fog);
+  (scene.background as THREE.Color).copy(zoneBase.fog);
+  ballGroup.scale.setScalar(1 + pulse * 0.05);
+
+  // trail follows the ball while running
+  if (state.phase === 'run') {
+    trailPts.push({ x: state.x, y: state.y, z: state.z });
+    if (trailPts.length > TRAIL_N) trailPts.shift();
+  }
+  updateTrail(zoneBase.rail);
 
   // animate movers + item/gem spin + particles
   for (const rec of segMeshes.values()) {
@@ -1446,9 +1677,10 @@ function tick(dt: number) {
     camera.fov = 55;
     ballSpin.rotation.y += dt * 0.8;
   } else {
-    // gameplay camera (rolls 180° when gravity is flipped)
+    // gameplay camera (rolls 180° when gravity is flipped, leans into turns)
     state.camG += (state.gravity - state.camG) * Math.min(1, dt * 4);
-    const roll = ((1 - state.camG) / 2) * Math.PI; // camG 1 -> 0 rad, camG -1 -> PI
+    const lean = THREE.MathUtils.clamp(-state.vx * 0.008, -0.2, 0.2) * state.camG;
+    const roll = ((1 - state.camG) / 2) * Math.PI + lean; // camG 1 -> 0 rad, camG -1 -> PI
     const back = 11;
     camPos.set(
       state.x * 0.55 + xCenter(state.z) * 0.45,
@@ -1459,14 +1691,16 @@ function tick(dt: number) {
     camera.up.set(Math.sin(roll), Math.cos(roll), 0);
     camLook.set(state.x, state.y + 1.2 * state.camG, state.z + 15);
     camera.lookAt(camLook);
-    camera.fov = 75 + (state.speed / SPEED_MAX) * 14;
+    fovKick = Math.max(0, fovKick - dt * 20);
+    camera.fov = 75 + (state.speed / SPEED_MAX) * 14 + fovKick;
   }
   camera.updateProjectionMatrix();
 
   const stars = scene.getObjectByName('stars');
   if (stars) stars.position.copy(camera.position);
 
-  renderer.render(scene, camera);
+  if (fxOn) composer.render();
+  else renderer.render(scene, camera);
 }
 requestAnimationFrame(frame);
 

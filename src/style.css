@@ -219,6 +219,10 @@ body {
   right: 14px;
 }
 
+.iconbtn.corner-2 {
+  top: 68px;
+}
+
 /* power-up chips */
 
 #powers {
