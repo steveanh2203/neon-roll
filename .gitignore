@@ -1,4 +1,7 @@
 node_modules/
 dist/
+.tools/
+.skill-sources/
+.vite-dev*.log
 .DS_Store
 *.local

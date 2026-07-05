@@ -744,6 +744,72 @@ body {
   letter-spacing: 6px;
 }
 
+#over {
+  justify-content: flex-start;
+  gap: 10px;
+  padding: clamp(34px, 8vh, 86px) clamp(18px, 4vw, 48px) 32px;
+  overflow-y: auto;
+  background:
+    radial-gradient(ellipse at 50% 38%, rgba(25, 230, 255, 0.11), transparent 42%),
+    rgba(8, 4, 20, 0.58);
+}
+
+#over h2 {
+  font-size: clamp(48px, 5.3vw, 76px);
+  line-height: 0.95;
+  text-align: center;
+}
+
+#over .death-reason {
+  margin-top: 0;
+}
+
+#over .final {
+  font-size: clamp(46px, 4.4vw, 68px);
+  margin-bottom: 4px;
+}
+
+#over .mission-list-over {
+  width: min(760px, 92vw);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+
+#over .mission {
+  min-height: 54px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, rgba(10, 6, 24, 0.78), rgba(10, 6, 24, 0.54)),
+    rgba(10, 6, 24, 0.6);
+}
+
+#over .stats-grid {
+  margin: 4px 0 2px;
+}
+
+#over .stat {
+  min-width: 106px;
+  border-radius: 8px;
+  background: rgba(10, 6, 24, 0.72);
+  backdrop-filter: blur(6px);
+}
+
+#over .btn {
+  width: min(360px, 82vw);
+  min-height: 54px;
+  padding: 13px 24px;
+}
+
+#over .btn-revive {
+  width: min(420px, 86vw);
+}
+
+#over .btn-secondary {
+  width: min(280px, 72vw);
+}
+
 .pause-title {
   color: #19e6ff !important;
   text-shadow: 0 0 24px #19e6ff, 0 0 70px #19e6ff66 !important;
@@ -1119,6 +1185,32 @@ body {
   .mission-list {
     grid-template-columns: 1fr;
     width: min(320px, 100%);
+  }
+
+  #over {
+    justify-content: flex-start;
+    gap: 9px;
+    padding: 30px 14px 24px;
+  }
+
+  #over h2 {
+    font-size: clamp(42px, 14vw, 62px);
+    letter-spacing: 4px;
+  }
+
+  #over .mission-list-over {
+    grid-template-columns: 1fr;
+    width: min(360px, 100%);
+  }
+
+  #over .mission {
+    min-height: 48px;
+  }
+
+  #over .btn,
+  #over .btn-revive,
+  #over .btn-secondary {
+    width: min(340px, 100%);
   }
 
   #hud.fast #hud-center {
