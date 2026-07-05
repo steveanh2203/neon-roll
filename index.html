@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>Neon Roll 3D</title>
-    <!-- CrazyGames SDK — tự no-op khi chạy ngoài platform (dev fallback trong main.ts) -->
+    <!-- CrazyGames SDK lifecycle hooks only; ads live on feature/ads. -->
     <script src="https://sdk.crazygames.com/crazygames-sdk-v3.js"></script>
   </head>
   <body>
@@ -124,7 +124,6 @@
           <div class="stat"><div class="stat-v" id="statFlips">0</div><div class="stat-k">FLIPS</div></div>
           <div class="stat"><div class="stat-v" id="statBest">0</div><div class="stat-k">BEST M</div></div>
         </div>
-        <button id="reviveBtn" class="btn btn-revive hidden">&#9654; REVIVE <span class="ad-tag">AD</span></button>
         <button id="retryBtn" class="btn">RETRY</button>
         <button id="menuBtn" class="btn btn-secondary">MENU</button>
       </div>
