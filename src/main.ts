@@ -917,7 +917,12 @@ const edgeGlowGeo = new THREE.BoxGeometry(0.18, 0.1, SEG_LEN * 0.88);
 const tilePanelGeo = new THREE.BoxGeometry(3.2, 0.08, 2.05);
 const dashGeo = new THREE.BoxGeometry(1.12, 0.1, 0.42);
 const chevronGeo = new THREE.BoxGeometry(3.5, 0.1, 0.22);
-const boostPadGeo = new THREE.BoxGeometry(5.6, 0.13, 1.2);
+const boostGiftBoxGeo = new THREE.BoxGeometry(1.35, 1.35, 1.35);
+const boostGiftLidGeo = new THREE.BoxGeometry(1.58, 0.22, 1.58);
+const boostGiftRibbonXGeo = new THREE.BoxGeometry(1.72, 1.48, 0.2);
+const boostGiftRibbonZGeo = new THREE.BoxGeometry(0.2, 1.48, 1.72);
+const boostGiftBowGeo = new THREE.TorusGeometry(0.26, 0.07, 8, 16);
+const boostGiftGlowGeo = new THREE.TorusGeometry(1.05, 0.035, 8, 42);
 const laserBarGeo = new THREE.BoxGeometry(1, 0.26, 0.34);
 const obGeo = new THREE.BoxGeometry(1.7, 1.7, 1.7);
 const itemGeo = new THREE.OctahedronGeometry(0.8, 0);
@@ -956,7 +961,10 @@ const floorMat = new THREE.MeshBasicMaterial({ color: ZONES[0].floor });
 const railMat = new THREE.MeshBasicMaterial({ color: ZONES[0].rail });
 const stripeMat = new THREE.MeshBasicMaterial({ color: ZONES[0].stripe });
 const trackPanelMat = new THREE.MeshBasicMaterial({ color: '#030712', transparent: true, opacity: 0.42, depthWrite: false });
-const boostMat = new THREE.MeshBasicMaterial({ color: '#ffd54d', transparent: true, opacity: 0.92 });
+const boostGiftMat = new THREE.MeshBasicMaterial({ color: '#ffd54d' });
+const boostGiftRibbonMat = new THREE.MeshBasicMaterial({ color: '#19e6ff' });
+const boostGiftBowMat = new THREE.MeshBasicMaterial({ color: '#ff2ea6' });
+const boostGiftGlowMat = new THREE.MeshBasicMaterial({ color: '#ffd54d', transparent: true, opacity: 0.52, side: THREE.DoubleSide });
 const laserMat = new THREE.MeshBasicMaterial({ color: '#ff2e55' });
 const obMat = new THREE.MeshBasicMaterial({ color: ZONES[0].ob });
 const obEdgeMat = new THREE.LineBasicMaterial({ color: '#ffffff' });
@@ -1150,7 +1158,7 @@ function obX(o: Ob): number {
 interface SegRecord {
   group: THREE.Group;
   obs: { mesh: THREE.Mesh; o: Ob }[];
-  boosts: { mesh: THREE.Mesh; b: Boost }[];
+  boosts: { mesh: THREE.Object3D; b: Boost }[];
   lasers: { meshes: THREE.Mesh[]; l: Laser }[];
   items: { mesh: THREE.Mesh; it: Item }[];
   gems: { mesh: THREE.Mesh; gm: Gem }[];
@@ -1171,6 +1179,28 @@ function padY(side: 1 | -1, z: number): number {
 
 function laserY(side: 1 | -1, z: number): number {
   return side === 1 ? yCenter(z) + 1.35 : yCenter(z) - FLOOR_H - 1.35;
+}
+
+function makeBoostGift(side: 1 | -1): THREE.Group {
+  const gift = new THREE.Group();
+  const body = new THREE.Mesh(boostGiftBoxGeo, boostGiftMat);
+  const lid = new THREE.Mesh(boostGiftLidGeo, boostGiftMat);
+  const ribbonX = new THREE.Mesh(boostGiftRibbonXGeo, boostGiftRibbonMat);
+  const ribbonZ = new THREE.Mesh(boostGiftRibbonZGeo, boostGiftRibbonMat);
+  const bowL = new THREE.Mesh(boostGiftBowGeo, boostGiftBowMat);
+  const bowR = new THREE.Mesh(boostGiftBowGeo, boostGiftBowMat);
+  const glow = new THREE.Mesh(boostGiftGlowGeo, boostGiftGlowMat);
+
+  lid.position.y = 0.78 * side;
+  bowL.position.set(-0.27, 1.01 * side, 0);
+  bowR.position.set(0.27, 1.01 * side, 0);
+  bowL.rotation.set(Math.PI / 2, 0.42, 0);
+  bowR.rotation.set(Math.PI / 2, -0.42, 0);
+  glow.rotation.x = Math.PI / 2;
+  glow.position.y = -0.76 * side;
+
+  gift.add(body, lid, ribbonX, ribbonZ, bowL, bowR, glow);
+  return gift;
 }
 
 function addTrackDetail(group: THREE.Group, geo: THREE.BufferGeometry, mat: THREE.Material, side: 1 | -1, x: number, z: number, rotY = 0) {
@@ -1225,7 +1255,7 @@ function addSurfaceStyle(group: THREE.Group, style: TrackStyle, side: 1 | -1) {
 function buildSeg(i: number) {
   const info = segInfo(i);
   const obs: { mesh: THREE.Mesh; o: Ob }[] = [];
-  const boosts: { mesh: THREE.Mesh; b: Boost }[] = [];
+  const boosts: { mesh: THREE.Object3D; b: Boost }[] = [];
   const lasers: { meshes: THREE.Mesh[]; l: Laser }[] = [];
   const items: { mesh: THREE.Mesh; it: Item }[] = [];
   const gems: { mesh: THREE.Mesh; gm: Gem }[] = [];
@@ -1301,10 +1331,11 @@ function buildSeg(i: number) {
     }
 
     for (const b of info.boosts) {
-      const pad = new THREE.Mesh(boostPadGeo, boostMat);
-      pad.position.set(0, 0.6 * b.side, b.z - (z0 + z1) / 2);
-      group.add(pad);
-      boosts.push({ mesh: pad, b });
+      const gift = makeBoostGift(b.side);
+      gift.position.set(0, 1.45 * b.side, b.z - (z0 + z1) / 2);
+      gift.userData.baseY = gift.position.y;
+      group.add(gift);
+      boosts.push({ mesh: gift, b });
     }
 
     for (const l of info.lasers) {
@@ -1631,7 +1662,7 @@ type Mission = {
 const missions: Mission[] = [
   { id: 'reach-300', title: 'REACH 300M', goal: 300, reward: 10, progress: () => state.best },
   { id: 'collect-25', title: 'COLLECT 25 GEMS', goal: 25, reward: 12, progress: () => careerStats.gems },
-  { id: 'boost-12', title: 'HIT 12 BOOSTS', goal: 12, reward: 12, progress: () => careerStats.boosts },
+  { id: 'boost-12', title: 'OPEN 12 BOOST GIFTS', goal: 12, reward: 12, progress: () => careerStats.boosts },
   { id: 'laser-8', title: 'CLEAR 8 LASERS', goal: 8, reward: 14, progress: () => careerStats.lasers },
 ];
 
@@ -1801,10 +1832,10 @@ window.addEventListener('keyup', (e) => (keys[e.code] = false));
 let touchSide = 0;
 window.addEventListener('pointerdown', (e) => {
   initAudio();
-  if (state.phase === 'run') touchSide = e.clientX < window.innerWidth / 2 ? -1 : 1;
+  if (state.phase === 'run') touchSide = e.clientX < window.innerWidth / 2 ? 1 : -1;
 });
 window.addEventListener('pointermove', (e) => {
-  if (touchSide !== 0) touchSide = e.clientX < window.innerWidth / 2 ? -1 : 1;
+  if (touchSide !== 0) touchSide = e.clientX < window.innerWidth / 2 ? 1 : -1;
 });
 window.addEventListener('pointerup', () => (touchSide = 0));
 window.addEventListener('pointercancel', () => (touchSide = 0));
@@ -1819,8 +1850,9 @@ $('pauseMenuBtn').addEventListener('click', () => goToMenu());
 
 function readSteer(): number {
   let s = 0;
-  if (keys['ArrowLeft'] || keys['KeyA']) s -= 1;
-  if (keys['ArrowRight'] || keys['KeyD']) s += 1;
+  // The chase camera looks down +Z, so screen-left maps to increasing world X.
+  if (keys['ArrowLeft'] || keys['KeyA']) s += 1;
+  if (keys['ArrowRight'] || keys['KeyD']) s -= 1;
   if (s === 0) s = touchSide;
   return s;
 }
@@ -2076,7 +2108,7 @@ function triggerBoost(b: Boost) {
   fovKick = 9;
   pickupSound();
   flashVignette('flash-cyan');
-  toast('BOOST!', 'gold');
+  toast('SPEED GIFT!', 'gold');
   for (const rec of segMeshes.values()) {
     const hit = rec.boosts.find((e) => e.b === b);
     if (hit) {
@@ -2370,6 +2402,11 @@ function tick(rawDt: number) {
   for (const rec of segMeshes.values()) {
     for (const e of rec.obs) {
       if (e.o.type === 'mover') e.mesh.position.x = obX(e.o);
+    }
+    for (const e of rec.boosts) {
+      e.mesh.rotation.y += dt * 2.2;
+      const baseY = Number(e.mesh.userData.baseY ?? e.mesh.position.y);
+      e.mesh.position.y = baseY + Math.sin(state.time * 3.2 + e.b.z) * 0.13 * e.b.side;
     }
     for (const e of rec.items) {
       e.mesh.rotation.y += dt * 2.5;

@@ -811,6 +811,14 @@ body {
   text-shadow: 0 0 24px #19e6ff, 0 0 70px #19e6ff66 !important;
 }
 
+#pause .btn {
+  width: min(340px, 82vw);
+}
+
+#pause .btn-secondary {
+  width: min(280px, 74vw);
+}
+
 .sub {
   color: #cfd6ff;
   font-size: 14px;
