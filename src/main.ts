@@ -34,6 +34,10 @@ const BOOST_MIN_Z = 180;
 const BOOST_DURATION = 1.35;
 const BOOST_MULT = 1.38;
 const LASER_MIN_Z = 520;
+const REVIVE_COST = 50;
+const NEAR_MISS_BAND = 0.9; // lateral band past the hitbox that still counts as a close call
+const NEAR_MISS_SCORE = 5;
+const LASER_WARN_DIST = 110; // HUD warning when a laser is this close ahead
 
 // track centerline (analytic — physics & rendering share the same functions)
 const yCenter = (z: number) => -0.28 * z + Math.sin(z * 0.035) * 3;
@@ -53,8 +57,6 @@ function mulberry32(a: number) {
 // ---------------------------------------------------------------- audio (tiny, no assets)
 let muted = localStorage.getItem('neonroll_muted') === '1';
 let audioCtx: AudioContext | null = null;
-let humOsc: OscillatorNode | null = null;
-let humGain: GainNode | null = null;
 
 let musicGain: GainNode | null = null;
 let noiseBuf: AudioBuffer | null = null;
@@ -63,16 +65,6 @@ function initAudio() {
   if (audioCtx) return;
   try {
     audioCtx = new AudioContext();
-    humOsc = audioCtx.createOscillator();
-    humOsc.type = 'sawtooth';
-    const filter = audioCtx.createBiquadFilter();
-    filter.type = 'lowpass';
-    filter.frequency.value = 240;
-    humGain = audioCtx.createGain();
-    humGain.gain.value = 0;
-    humOsc.connect(filter).connect(humGain).connect(audioCtx.destination);
-    humOsc.start();
-
     musicGain = audioCtx.createGain();
     musicGain.gain.value = 0.1;
     musicGain.connect(audioCtx.destination);
@@ -83,12 +75,6 @@ function initAudio() {
   } catch {
     audioCtx = null;
   }
-}
-
-function setHum(speed: number, on: boolean) {
-  if (!audioCtx || !humOsc || !humGain) return;
-  humOsc.frequency.value = 50 + speed * 2.2;
-  humGain.gain.value = on && !muted ? 0.013 : 0;
 }
 
 // ---------- procedural synthwave sequencer (Am / Am / F / G, 104 BPM)
@@ -320,6 +306,21 @@ const ZONES: Zone[] = [
   { name: 'AURORA', preview: '/assets/maps/09-aurora.jpg', floor: '#0d1626', rail: '#80ffdb', stripe: '#b388ff', ob: '#ff2e55', fog: '#0a1220', star: '#e0f2ff', unlockTotal: 23000, decor: 'none' },
   { name: 'GALAXY VOID', preview: '/assets/maps/10-galaxy-void.jpg', floor: '#16081f', rail: '#d500f9', stripe: '#ffd54d', ob: '#ff2e55', fog: '#0d0214', star: '#e2b0ff', unlockTotal: 30000, decor: 'none' },
 ];
+
+// "lost signal" narrative — one transmission line per map, shown on zone entry
+const INTRO_LORE = 'A SIGNAL FELL FROM THE NETWORK… ROLL IT HOME';
+const LORE: Record<string, string> = {
+  'NEON CITY': 'SIGNAL LOST IN THE GRID · ORIGIN: NEON CITY',
+  'RIVERSIDE': 'THE SIGNAL FOLLOWS THE RIVER · SOMETHING CALLS AHEAD',
+  'DEEP OCEAN': 'DEEPER · THE PRESSURE BENDS THE LIGHT',
+  'TROPIC BEACH': 'SUNLIGHT ON THE WIRE · A MEMORY OF WARMTH',
+  'EMERALD FOREST': 'THE FOREST REMEMBERS EVERY SIGNAL THAT PASSED',
+  'MISTY MOUNTAIN': 'ABOVE THE CLOUDS, THE STATIC CLEARS',
+  'GOLDEN DESERT': 'ENDLESS SAND · THE SIGNAL DOES NOT STOP',
+  'VOLCANO': 'THROUGH FIRE · ALMOST HOME',
+  'AURORA': 'THE SKY DANCES · HOME IS CLOSE',
+  'GALAXY VOID': 'THE VOID OPENS · THE SIGNAL IS HOME',
+};
 
 function zoneUnlocked(z: Zone): boolean {
   return state.total >= z.unlockTotal;
@@ -1409,7 +1410,7 @@ function updateTrack(ballZ: number) {
 }
 
 // ---------------------------------------------------------------- game state
-type Phase = 'menu' | 'run' | 'pause' | 'over';
+type Phase = 'menu' | 'run' | 'pause' | 'revive' | 'over';
 
 const state = {
   phase: 'menu' as Phase,
@@ -1437,13 +1438,15 @@ const careerStats = {
   gems: Number(localStorage.getItem('neonroll_total_gems_collected') || 0),
   boosts: Number(localStorage.getItem('neonroll_total_boosts') || 0),
   lasers: Number(localStorage.getItem('neonroll_total_lasers') || 0),
+  near: Number(localStorage.getItem('neonroll_total_nearmiss') || 0),
 };
-const runStats = { gems: 0, boosts: 0, lasers: 0 };
+const runStats = { gems: 0, boosts: 0, lasers: 0, near: 0 };
 
 function saveCareerStats() {
   localStorage.setItem('neonroll_total_gems_collected', String(careerStats.gems));
   localStorage.setItem('neonroll_total_boosts', String(careerStats.boosts));
   localStorage.setItem('neonroll_total_lasers', String(careerStats.lasers));
+  localStorage.setItem('neonroll_total_nearmiss', String(careerStats.near));
 }
 
 let lastMilestone = 0;
@@ -1486,6 +1489,19 @@ const shakeBtnEl = $('shakeBtn');
 const motionBtnEl = $('motionBtn');
 const skinNameEl = $('skinName');
 const skinLockEl = $('skinLock');
+const laserWarnEl = $('laserWarn');
+const nearMissEl = $('nearmiss');
+const transmissionEl = $('transmission');
+const transmissionTextEl = $('transmissionText');
+const reviveEl = $('revive');
+const reviveFillEl = $('reviveFill');
+const statGemsEl = $('statGems');
+const statNearEl = $('statNear');
+const nextMapBoxEl = $('nextMapBox');
+const nextMapNameEl = $('nextMapName');
+const nextMapImgEl = $('nextMapImg') as HTMLImageElement;
+const nextMapFillEl = $('nextMapFill');
+const nextMapDistEl = $('nextMapDist');
 const pChips: Record<Exclude<PowerKind, never>, { chip: HTMLElement; bar: HTMLElement | null }> = {
   shield: { chip: $('pShield'), bar: null },
   slow: { chip: $('pSlow'), bar: $('pSlowBar') },
@@ -1525,6 +1541,27 @@ function flashVignette(cls: 'flash' | 'flash-purple' | 'flash-cyan') {
   vignetteEl.classList.add(cls);
 }
 
+// bottom "radio" bar for story transmissions — independent of the toast
+let transmissionTimer = 0;
+
+function transmit(text: string, gold = false) {
+  transmissionTextEl.textContent = text;
+  transmissionEl.classList.toggle('gold', gold);
+  transmissionEl.classList.remove('hidden');
+  void (transmissionEl as HTMLElement).offsetWidth;
+  window.clearTimeout(transmissionTimer);
+  transmissionTimer = window.setTimeout(() => transmissionEl.classList.add('hidden'), 4200);
+}
+
+// show a map's lore line once per profile (zone entries mid-run always replay it)
+function transmitMapLoreOnce(name: string) {
+  const seen = new Set<string>(JSON.parse(localStorage.getItem('neonroll_lore_seen') || '[]') as string[]);
+  if (seen.has(name) || !LORE[name]) return;
+  seen.add(name);
+  localStorage.setItem('neonroll_lore_seen', JSON.stringify([...seen]));
+  transmit(LORE[name]);
+}
+
 // ---------------------------------------------------------------- sound toggle
 const soundBtns = [$('soundBtn'), $('soundBtnMenu'), pauseSoundBtnEl];
 
@@ -1542,7 +1579,6 @@ function toggleSound() {
   muted = !muted;
   localStorage.setItem('neonroll_muted', muted ? '1' : '0');
   renderSoundBtns();
-  setHum(state.speed, state.phase === 'run');
 }
 soundBtns.forEach((b) => b.addEventListener('click', toggleSound));
 
@@ -1664,6 +1700,7 @@ const missions: Mission[] = [
   { id: 'collect-25', title: 'COLLECT 25 GEMS', goal: 25, reward: 12, progress: () => careerStats.gems },
   { id: 'boost-12', title: 'OPEN 12 BOOST GIFTS', goal: 12, reward: 12, progress: () => careerStats.boosts },
   { id: 'laser-8', title: 'CLEAR 8 LASERS', goal: 8, reward: 14, progress: () => careerStats.lasers },
+  { id: 'near-15', title: '15 CLOSE CALLS', goal: 15, reward: 12, progress: () => careerStats.near },
 ];
 
 const completedMissions = new Set<string>(JSON.parse(localStorage.getItem('neonroll_completed_missions') || '[]') as string[]);
@@ -1847,14 +1884,17 @@ $('pauseBtn').addEventListener('click', () => pauseRun());
 $('resumeBtn').addEventListener('click', () => resumeRun());
 $('menuBtn').addEventListener('click', () => goToMenu());
 $('pauseMenuBtn').addEventListener('click', () => goToMenu());
+$('reviveBtn').addEventListener('click', () => doRevive());
+$('giveUpBtn').addEventListener('click', () => skipRevive());
 
 function readSteer(): number {
   let s = 0;
-  // The chase camera looks down +Z, so screen-left maps to increasing world X.
+  // The chase camera looks down +Z, so screen-left maps to increasing world X —
+  // and the camera rolls 180° on the underside, swapping screen left/right again.
   if (keys['ArrowLeft'] || keys['KeyA']) s += 1;
   if (keys['ArrowRight'] || keys['KeyD']) s -= 1;
   if (s === 0) s = touchSide;
-  return s;
+  return s * state.gravity;
 }
 
 // ---------------------------------------------------------------- run control
@@ -1907,6 +1947,9 @@ function startRun() {
   runStats.gems = 0;
   runStats.boosts = 0;
   runStats.lasers = 0;
+  runStats.near = 0;
+  revivedThisRun = false;
+  cancelReviveOffer();
   zoneIdx = 0;
   computeRunRotation();
   setZoneTargets(0);
@@ -1928,12 +1971,21 @@ function startRun() {
   startMusic();
   showGo();
   sdkStart();
+
+  // opening transmission: the intro line on the very first run, then each map's
+  // lore line the first time that map starts a run
+  if (!localStorage.getItem('neonroll_intro_seen')) {
+    localStorage.setItem('neonroll_intro_seen', '1');
+    window.setTimeout(() => transmit(INTRO_LORE), 1100);
+  } else {
+    const startMap = runRotation[0].name;
+    window.setTimeout(() => transmitMapLoreOnce(startMap), 1100);
+  }
 }
 
 function pauseRun() {
   if (state.phase !== 'run') return;
   state.phase = 'pause';
-  setHum(0, false);
   stopMusic();
   sdkStop();
   pauseEl.classList.remove('hidden');
@@ -1949,7 +2001,6 @@ function resumeRun() {
 
 function goToMenu() {
   state.phase = 'menu';
-  setHum(0, false);
   stopMusic();
   sdkStop();
   ballSpin.visible = true;
@@ -1976,13 +2027,70 @@ function animateFinalScore(to: number) {
   tickUp();
 }
 
+// ---------- revive (once per run, paid with gems)
+let revivedThisRun = false;
+let reviveCountdown = 0; // interval id for the offer timer bar
+let reviveOfferTimer = 0; // delay before the offer appears (lets the crash effect breathe)
+
+function cancelReviveOffer() {
+  window.clearInterval(reviveCountdown);
+  window.clearTimeout(reviveOfferTimer);
+  reviveEl.classList.add('hidden');
+}
+
+function offerRevive() {
+  reviveOfferTimer = window.setTimeout(() => {
+    reviveEl.classList.remove('hidden');
+    reviveFillEl.style.width = '100%';
+    const t0 = performance.now();
+    const DUR = 3000;
+    window.clearInterval(reviveCountdown);
+    reviveCountdown = window.setInterval(() => {
+      const left = 1 - (performance.now() - t0) / DUR;
+      reviveFillEl.style.width = `${Math.max(0, left * 100)}%`;
+      if (left <= 0) skipRevive();
+    }, 40);
+  }, 550);
+}
+
+function skipRevive() {
+  if (state.phase !== 'revive') return;
+  cancelReviveOffer();
+  state.phase = 'over';
+  finalizeDeath(150);
+}
+
+function doRevive() {
+  if (state.phase !== 'revive') return;
+  cancelReviveOffer();
+  revivedThisRun = true;
+  gemWallet -= REVIVE_COST;
+  saveWallet();
+  updateWalletUI();
+  // drop the ball on the next safe segment ahead, briefly invulnerable
+  let i = Math.floor(state.z / SEG_LEN) + 1;
+  while (segInfo(i).gap) i++;
+  state.z = i * SEG_LEN + 2;
+  state.x = xCenter(state.z);
+  state.vx = 0;
+  state.vy = 0;
+  state.y = restY(state.z, state.gravity);
+  state.grounded = true;
+  powers.invuln = 2.2;
+  ballSpin.visible = true;
+  state.phase = 'run';
+  burst(state.x, state.y, state.z, '#8affd0', 16, 8);
+  flashVignette('flash-cyan');
+  toast('REVIVED!', 'gold');
+  startMusic();
+  sdkStart();
+}
+
 function die(reason = 'Crashed') {
   if (state.phase !== 'run') return;
-  state.phase = 'over';
   lastDeathReason = reason;
   deathReasonEl.textContent = reason.toUpperCase();
   crashSound();
-  setHum(0, false);
   stopMusic();
   sdkStop();
   flashVignette('flash');
@@ -1997,6 +2105,27 @@ function die(reason = 'Crashed') {
   ballSpin.visible = false;
   shieldMesh.visible = false;
 
+  if (!revivedThisRun && gemWallet >= REVIVE_COST) {
+    state.phase = 'revive';
+    offerRevive();
+  } else {
+    state.phase = 'over';
+    finalizeDeath();
+  }
+}
+
+// next locked map teaser on the game-over screen — the "one more run" hook
+function renderNextMap() {
+  const next = ZONES.find((z) => z.unlockTotal > state.total);
+  nextMapBoxEl.classList.toggle('hidden', !next);
+  if (!next) return;
+  nextMapNameEl.textContent = `LV.${ZONES.indexOf(next) + 1} ${next.name}`;
+  nextMapImgEl.src = next.preview;
+  nextMapFillEl.style.width = `${Math.min(100, (state.total / next.unlockTotal) * 100)}%`;
+  nextMapDistEl.textContent = `${Math.max(0, Math.ceil(next.unlockTotal - state.total))}M TO GO`;
+}
+
+function finalizeDeath(delay = 500) {
   const score = Math.floor(state.score);
   const isNewBest = score > 0 && score > state.best;
   const levelBefore = playerLevel();
@@ -2015,6 +2144,9 @@ function die(reason = 'Crashed') {
   statSpeedEl.textContent = `${Math.round(state.topSpeed * 3.6)}`;
   statFlipsEl.textContent = `${state.flips}`;
   statBestEl.textContent = `${state.best}`;
+  statGemsEl.textContent = `${runStats.gems}`;
+  statNearEl.textContent = `${runStats.near}`;
+  renderNextMap();
   newBestEl.classList.toggle('hidden', !isNewBest);
   if (isNewBest) sdkHappy();
 
@@ -2022,7 +2154,7 @@ function die(reason = 'Crashed') {
     hudEl.classList.add('hidden');
     overEl.classList.remove('hidden');
     animateFinalScore(score);
-  }, 500);
+  }, delay);
 }
 
 // ---------------------------------------------------------------- powers
@@ -2058,6 +2190,23 @@ function applyPower(kind: PowerKind) {
     setBallOpacity(0.35);
     toast('GHOST MODE!', 'purple');
   }
+}
+
+let nearMissTimer = 0;
+
+function nearMiss() {
+  runStats.near += 1;
+  careerStats.near += 1;
+  saveCareerStats();
+  const pts = NEAR_MISS_SCORE * (powers.x2 > 0 ? 2 : 1);
+  state.score += pts;
+  blip(1250, 1900, 0.07, 'sine', 0.05);
+  nearMissEl.textContent = `CLOSE! +${pts}`;
+  nearMissEl.classList.remove('hidden');
+  void (nearMissEl as HTMLElement).offsetWidth;
+  window.clearTimeout(nearMissTimer);
+  nearMissTimer = window.setTimeout(() => nearMissEl.classList.add('hidden'), 700);
+  checkMissions();
 }
 
 function breakShield(o: Ob) {
@@ -2172,7 +2321,15 @@ function step(dt: number) {
   if (zi !== zoneIdx) {
     zoneIdx = zi;
     setZoneTargets(zi);
-    toast(`ZONE ${zi + 1} · ${runRotation[zi % runRotation.length].name}`, 'gold');
+    const zn = runRotation[zi % runRotation.length];
+    toast(`ZONE ${zi + 1} · ${zn.name}`, 'gold');
+    if (zn.name === 'GALAXY VOID' && !localStorage.getItem('neonroll_signal_home')) {
+      localStorage.setItem('neonroll_signal_home', '1');
+      transmit('★ THE SIGNAL IS HOME · JOURNEY COMPLETE ★', true);
+      sdkHappy();
+    } else if (LORE[zn.name]) {
+      transmit(LORE[zn.name]);
+    }
   }
 
   // milestone + new-best toasts
@@ -2321,6 +2478,10 @@ function step(dt: number) {
           else die('Hit obstacle');
           return;
         }
+        // survived crossing this obstacle's z within a whisker of its hitbox → close call
+        if (zPrev < o.z && state.z >= o.z && Math.abs(state.x - obX(o)) < 0.85 + BALL_R + NEAR_MISS_BAND) {
+          nearMiss();
+        }
       }
     }
   }
@@ -2350,7 +2511,6 @@ function tick(rawDt: number) {
 
   if (state.phase === 'run') {
     step(dt);
-    setHum(state.speed, true);
     const displaySpeed = state.speed * (powers.slow > 0 ? 0.55 : 1) * (powers.boost > 0 ? BOOST_MULT : 1);
     scoreEl.textContent = `${Math.floor(state.score)}`;
     speedEl.textContent = `${Math.round(displaySpeed * 3.6)} km/h`;
@@ -2365,8 +2525,22 @@ function tick(rawDt: number) {
     if (pChips.x2.bar) pChips.x2.bar.style.width = `${(powers.x2 / 10) * 100}%`;
     pChips.ghost.chip.classList.toggle('hidden', powers.ghost === 0);
     if (pChips.ghost.bar) pChips.ghost.bar.style.width = `${(powers.ghost / 5) * 100}%`;
+
+    // laser telegraph: HUD warning when one is ahead on our side of the track
+    let laserAhead = false;
+    const warnSeg = Math.floor(state.z / SEG_LEN);
+    for (let i = warnSeg; i <= warnSeg + Math.ceil(LASER_WARN_DIST / SEG_LEN) && !laserAhead; i++) {
+      for (const l of segInfo(i).lasers) {
+        if (!l.dead && l.side === state.gravity && l.z > state.z && l.z - state.z < LASER_WARN_DIST) {
+          laserAhead = true;
+          break;
+        }
+      }
+    }
+    laserWarnEl.classList.toggle('hidden', !laserAhead);
   } else {
     hudEl.classList.remove('fast');
+    laserWarnEl.classList.add('hidden');
   }
 
   updateTrack(state.z);
@@ -2387,6 +2561,8 @@ function tick(rawDt: number) {
   const neonBrightness = NEON_BASE_BRIGHTNESS + pulse * NEON_BEAT_BOOST;
   railMat.color.copy(zoneBase.rail).multiplyScalar(neonBrightness);
   stripeMat.color.copy(zoneBase.stripe).multiplyScalar(neonBrightness);
+  // lasers throb so they read as danger from afar
+  laserMat.color.set('#ff2e55').multiplyScalar(0.7 + 0.3 * (0.5 + 0.5 * Math.sin(state.time * 9)));
   (scene.fog as THREE.Fog).color.copy(zoneBase.fog);
   (scene.background as THREE.Color).copy(zoneBase.fog);
   ballGroup.scale.setScalar(1 + pulse * 0.05);

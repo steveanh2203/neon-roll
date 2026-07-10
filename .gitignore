@@ -1,6 +1,7 @@
 node_modules/
 dist/
 .tools/
+.worktrees/
 .skill-sources/
 .vite-dev*.log
 .DS_Store

@@ -37,6 +37,9 @@
           <div id="pX2" class="pchip gold hidden"><span>&#10006;2</span><div class="pbar"><i id="pX2Bar"></i></div></div>
           <div id="pGhost" class="pchip purple hidden"><span>&#128123;</span><div class="pbar"><i id="pGhostBar"></i></div></div>
         </div>
+        <div id="laserWarn" class="hidden">&#9888; LASER AHEAD</div>
+        <div id="nearmiss" class="hidden"></div>
+        <div id="transmission" class="hidden"><span class="tx-tag">&#9679; TRANSMISSION</span><span id="transmissionText"></span></div>
         <div id="toast" class="hidden"></div>
         <div id="go" class="hidden">GO!</div>
       </div>
@@ -112,6 +115,13 @@
         <button id="pauseMenuBtn" class="btn btn-secondary">MENU</button>
       </div>
 
+      <div id="revive" class="overlay hidden">
+        <h2 class="revive-title">SIGNAL FADING&#8230;</h2>
+        <div class="revive-bar"><i id="reviveFill"></i></div>
+        <button id="reviveBtn" class="btn btn-revive">REVIVE &minus;50 &#128142;</button>
+        <button id="giveUpBtn" class="btn btn-secondary">GIVE UP</button>
+      </div>
+
       <div id="over" class="overlay hidden">
         <h2>CRASHED</h2>
         <p id="deathReason" class="death-reason">Hit obstacle</p>
@@ -123,6 +133,17 @@
           <div class="stat"><div class="stat-v" id="statSpeed">0</div><div class="stat-k">TOP KM/H</div></div>
           <div class="stat"><div class="stat-v" id="statFlips">0</div><div class="stat-k">FLIPS</div></div>
           <div class="stat"><div class="stat-v" id="statBest">0</div><div class="stat-k">BEST M</div></div>
+          <div class="stat"><div class="stat-v" id="statGems">0</div><div class="stat-k">&#128142; GEMS</div></div>
+          <div class="stat"><div class="stat-v" id="statNear">0</div><div class="stat-k">CLOSE CALLS</div></div>
+        </div>
+        <div id="nextMapBox" class="nextmap hidden">
+          <img id="nextMapImg" alt="" />
+          <div class="nextmap-info">
+            <div class="nextmap-label">NEXT MAP</div>
+            <div id="nextMapName" class="nextmap-name"></div>
+            <div class="nextmap-progress"><i id="nextMapFill"></i></div>
+            <div id="nextMapDist" class="nextmap-dist"></div>
+          </div>
         </div>
         <button id="retryBtn" class="btn">RETRY</button>
         <button id="menuBtn" class="btn btn-secondary">MENU</button>

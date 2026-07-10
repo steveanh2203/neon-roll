@@ -40,4 +40,6 @@ npm run build   # output vào dist/, ~131KB gzip
 - [x] 5 zone đổi màu mỗi 500m + chướng ngại mover/tường + 10 skin bóng + power-up (shield/slow/x2/ghost)
 - [x] Juice: bóng vỡ khi crash, particle qua cổng/nhặt đồ, gem +15 điểm, rung màn hình
 - [x] CrazyGames SDK v3: gameplayStart/Stop, happytime khi phá kỷ lục, rewarded ad "REVIVE" (dev fallback khi chạy ngoài platform)
+- [x] Đợt nâng cấp 1: revive bằng gem (50💎, 1 lần/run), near-miss +5 điểm, cảnh báo/pulse laser, màn game-over mới (gems, close calls, progress tới map kế), cốt truyện "Lost Signal" qua transmission
+
 - [ ] Thumbnail + submit developer portal (upload thư mục `dist/` sau khi `npm run build`)
